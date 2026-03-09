@@ -615,154 +615,457 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Git Version Traceability - Search & History Explorer</title>
+    <title>GitSearch — Git Version Traceability Explorer</title>
+    <meta name="description" content="Explorador interactivo de historial y versiones de repositorios Git. Análisis topológico de tags y búsqueda avanzada de commits.">
     <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
+        /* ═══════════════════════════════════════════════════════════
+           GitSearch UI — Monochromatic Design System
+           Solo cambios visuales / Only visual changes
+           ═══════════════════════════════════════════════════════════ */
         :root {
-            --bg-color: #0d1117; 
-            --panel-bg: rgba(22, 27, 34, 0.95);
-            --text-primary: #e6edf3;
-            --text-secondary: #7d8590;
-            --accent-primary: #2f81f7;
-            --accent-secondary: #58a6ff;
-            --border-color: rgba(255, 255, 255, 0.1);
-            --border-panel: rgba(255, 255, 255, 0.15);
-            --diff-added: #2ea043;
-            --diff-removed: #f85149;
-            --shadow-subtle: 0 8px 32px rgba(0, 0, 0, 0.5);
-            --panel-width: 500px;
+            /* Paleta monocromática — blanco / negro / grises */
+            --bg-color:        #0a0a0a;
+            --bg-surface:      #111111;
+            --bg-raised:       #1a1a1a;
+            --bg-hover:        #222222;
+            --panel-bg:        rgba(14, 14, 14, 0.97);
+            --panel-border:    rgba(255, 255, 255, 0.08);
+
+            --text-primary:    #f0f0f0;
+            --text-secondary:  #888888;
+            --text-muted:      #555555;
+
+            /* Acentos monocromáticos — sin colores fuertes */
+            --accent-primary:  #e0e0e0;
+            --accent-dim:      #666666;
+            --accent-active:   #ffffff;
+
+            --border-subtle:   rgba(255, 255, 255, 0.06);
+            --border-normal:   rgba(255, 255, 255, 0.10);
+            --border-strong:   rgba(255, 255, 255, 0.18);
+
+            /* Diff colors — atenuados para no romper monocromatismo */
+            --diff-added:      #4a9960;
+            --diff-removed:    #b55050;
+
+            --shadow-panel:    0 8px 40px rgba(0, 0, 0, 0.7);
+            --shadow-modal:    0 20px 80px rgba(0, 0, 0, 0.9);
+            --panel-width:     500px;
+
+            --radius-sm:  4px;
+            --radius-md:  8px;
+            --radius-lg:  12px;
+
+            --transition-fast: 0.15s ease;
+            --transition-med:  0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
+
+        /* ── Reset y base ── */
+        *, *::before, *::after { box-sizing: border-box; }
 
         body, html {
             margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
-            background-color: var(--bg-color); color: var(--text-primary);
-            font-family: 'Inter', -apple-system, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            font-size: 14px;
+            -webkit-font-smoothing: antialiased;
         }
 
         #mynetwork { width: 100%; height: 100%; }
 
-        /* Search (Inside Panel) */
+        /* ── Barra superior — branding GitSearch ── */
+        /* [VISUAL ONLY] Topbar de identidad del proyecto */
+        #gs-topbar {
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 48px;
+            background: rgba(10, 10, 10, 0.92);
+            backdrop-filter: blur(16px);
+            border-bottom: 1px solid var(--border-subtle);
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+            z-index: 50;
+            gap: 12px;
+        }
+        #gs-topbar .gs-brand {
+            font-size: 0.88rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            letter-spacing: -0.02em;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        #gs-topbar .gs-brand-dot {
+            width: 7px; height: 7px;
+            border-radius: 50%;
+            background: var(--text-primary);
+        }
+        #gs-topbar .gs-separator {
+            width: 1px; height: 18px;
+            background: var(--border-normal);
+        }
+        #gs-topbar .gs-subtitle {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            font-weight: 400;
+        }
+
+        /* ── Contenedor principal — offset por topbar ── */
+        #mynetwork { padding-top: 48px; }
+
+        /* ── Panel de búsqueda dentro del side-panel ── */
         .search-area {
-            background: rgba(255, 255, 255, 0.03); padding: 16px; border-radius: 8px;
-            border: 1px solid var(--border-color); margin-bottom: 16px; display: flex; gap: 8px;
+            background: var(--bg-raised);
+            padding: 12px;
+            border-radius: var(--radius-md);
+            border: 1px solid var(--border-normal);
+            margin-bottom: 16px;
+            display: flex;
+            gap: 8px;
         }
         .search-area input {
-            flex: 1; background: #0d1117; border: 1px solid var(--border-color); color: white;
-            padding: 8px 12px; border-radius: 6px; font-size: 0.85rem; outline: none;
+            flex: 1;
+            background: var(--bg-surface);
+            border: 1px solid var(--border-normal);
+            color: var(--text-primary);
+            padding: 8px 12px;
+            border-radius: var(--radius-sm);
+            font-size: 0.82rem;
+            outline: none;
+            font-family: inherit;
+            transition: border-color var(--transition-fast);
         }
+        .search-area input:focus { border-color: var(--border-strong); }
+        .search-area input::placeholder { color: var(--text-muted); }
         .search-area button {
-            background: var(--accent-primary); border: none; color: white;
-            padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 0.8rem; font-weight: 600;
+            background: var(--bg-hover);
+            border: 1px solid var(--border-normal);
+            color: var(--text-primary);
+            padding: 7px 14px;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            font-size: 0.78rem;
+            font-weight: 600;
+            font-family: inherit;
+            transition: background var(--transition-fast), border-color var(--transition-fast);
+        }
+        .search-area button:hover {
+            background: #2a2a2a;
+            border-color: var(--border-strong);
         }
 
-        /* Side Panel */
+        /* ── Side Panel ── */
         .side-panel {
-            position: absolute; top: 0; right: 0; width: var(--panel-width); height: 100%;
-            background: var(--panel-bg); backdrop-filter: blur(20px); border-left: 1px solid var(--border-panel);
-            box-shadow: var(--shadow-subtle); z-index: 1000; transform: translateX(100%);
-            transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1); display: flex; flex-direction: column;
+            position: absolute;
+            top: 48px; /* offset topbar */
+            right: 0;
+            width: var(--panel-width);
+            height: calc(100% - 48px);
+            background: var(--panel-bg);
+            backdrop-filter: blur(24px);
+            border-left: 1px solid var(--panel-border);
+            box-shadow: var(--shadow-panel);
+            z-index: 1000;
+            transform: translateX(100%);
+            transition: transform var(--transition-med);
+            display: flex;
+            flex-direction: column;
         }
-
         .side-panel.open { transform: translateX(0); }
 
-        .panel-header { padding: 24px 32px; border-bottom: 1px solid var(--border-color); position: relative; }
-        .close-btn { position: absolute; top: 24px; right: 24px; background: none; border: none; color: var(--text-secondary); font-size: 24px; cursor: pointer; }
-
-        .panel-nav { display: flex; border-bottom: 1px solid var(--border-color); }
-        .nav-item { flex: 1; padding: 12px; text-align: center; cursor: pointer; color: var(--text-secondary); font-size: 0.85rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; transition: 0.2s; }
-        .nav-item.active { color: var(--accent-secondary); border-bottom: 2px solid var(--accent-secondary); background: rgba(88, 166, 255, 0.05); }
-
-        .panel-content { flex: 1; overflow-y: auto; padding: 24px 32px; scrollbar-width: thin; }
-        
-        .section-title { font-size: 0.75rem; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; margin: 24px 0 12px 0; }
-        
-        /* Commit List */
-        .commit-explorer-list { display: flex; flex-direction: column; gap: 4px; }
-        .ce-item { 
-            padding: 10px 14px; border-radius: 6px; cursor: pointer; transition: 0.2s; border: 1px solid transparent;
-            display: grid; grid-template-columns: 80px 1fr; gap: 12px; align-items: start;
+        /* ── Panel Header ── */
+        .panel-header {
+            padding: 20px 28px 16px;
+            border-bottom: 1px solid var(--border-subtle);
+            position: relative;
+            flex-shrink: 0;
         }
-        .ce-item:hover { background: rgba(255, 255, 255, 0.05); }
-        .ce-item.active { background: rgba(47, 129, 247, 0.1); border-color: var(--accent-primary); }
-        .ce-hash { font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: var(--accent-secondary); font-weight: 600; }
-        .ce-msg { font-size: 0.85rem; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .ce-meta { font-size: 0.7rem; color: var(--text-secondary); margin-top: 4px; }
+        .close-btn {
+            position: absolute;
+            top: 20px; right: 20px;
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-size: 20px;
+            cursor: pointer;
+            line-height: 1;
+            padding: 4px 6px;
+            border-radius: var(--radius-sm);
+            transition: color var(--transition-fast), background var(--transition-fast);
+        }
+        .close-btn:hover { color: var(--text-primary); background: var(--bg-raised); }
 
-        /* Diff */
+        /* ── Panel Nav (tabs) ── */
+        .panel-nav {
+            display: flex;
+            border-bottom: 1px solid var(--border-subtle);
+            flex-shrink: 0;
+        }
+        .nav-item {
+            flex: 1;
+            padding: 11px 8px;
+            text-align: center;
+            cursor: pointer;
+            color: var(--text-muted);
+            font-size: 0.72rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            transition: color var(--transition-fast), border-color var(--transition-fast);
+            border-bottom: 2px solid transparent;
+            user-select: none;
+        }
+        .nav-item:hover { color: var(--text-secondary); }
+        .nav-item.active {
+            color: var(--text-primary);
+            border-bottom-color: var(--text-primary);
+        }
+
+        /* ── Panel Content ── */
+        .panel-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px 28px;
+            scrollbar-width: thin;
+            scrollbar-color: #333 transparent;
+        }
+        .panel-content::-webkit-scrollbar { width: 4px; }
+        .panel-content::-webkit-scrollbar-track { background: transparent; }
+        .panel-content::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+
+        /* ── Section titles ── */
+        .section-title {
+            font-size: 0.68rem;
+            font-weight: 700;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            margin: 20px 0 10px 0;
+        }
+
+        /* ── Commit Explorer List ── */
+        .commit-explorer-list { display: flex; flex-direction: column; gap: 2px; }
+        .ce-item {
+            padding: 9px 12px;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: background var(--transition-fast);
+            border: 1px solid transparent;
+            display: grid;
+            grid-template-columns: 72px 1fr;
+            gap: 12px;
+            align-items: start;
+        }
+        .ce-item:hover { background: var(--bg-raised); }
+        .ce-item.active {
+            background: var(--bg-raised);
+            border-color: var(--border-normal);
+        }
+        .ce-hash {
+            font-family: 'JetBrains Mono', 'Courier New', monospace;
+            font-size: 0.72rem;
+            color: var(--text-secondary);
+            font-weight: 500;
+            padding-top: 1px;
+        }
+        .ce-msg {
+            font-size: 0.82rem;
+            color: var(--text-primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .ce-meta {
+            font-size: 0.68rem;
+            color: var(--text-muted);
+            margin-top: 3px;
+        }
+
+        /* ── Diff ── */
         .diff-container {
-            font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; background: #010409;
-            border: 1px solid var(--border-color); border-radius: 8px; margin-top: 12px;
-            white-space: pre-wrap; word-break: break-all; overflow-x: auto; padding: 12px;
-            color: #d1d5db; line-height: 1.4;
+            font-family: 'JetBrains Mono', 'Courier New', monospace;
+            font-size: 0.73rem;
+            background: var(--bg-color);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-md);
+            margin-top: 12px;
+            white-space: pre-wrap;
+            word-break: break-all;
+            overflow-x: auto;
+            padding: 12px 0;
+            color: #aaaaaa;
+            line-height: 1.5;
         }
-        .diff-added { color: var(--diff-added); background: rgba(46, 160, 67, 0.1); display: block; }
-        .diff-removed { color: var(--diff-removed); background: rgba(248, 81, 73, 0.1); display: block; }
-        .diff-info { color: #8b949e; font-style: italic; }
+        .diff-added  { color: var(--diff-added);   background: rgba(74, 153, 96, 0.08); display: block; }
+        .diff-removed{ color: var(--diff-removed); background: rgba(181, 80, 80, 0.08); display: block; }
+        .diff-info   { color: var(--text-muted); }
 
+        /* ── Intro Panel (leyenda del grafo) ── */
         .intro-panel {
-            position: absolute; top: 24px; left: 24px; width: 300px; background: var(--panel-bg);
-            border: 1px solid var(--border-panel); border-radius: 12px; padding: 20px; z-index: 100;
+            position: absolute;
+            top: 68px; /* topbar + gap */
+            left: 20px;
+            width: 220px;
+            background: var(--panel-bg);
+            border: 1px solid var(--panel-border);
+            border-radius: var(--radius-lg);
+            padding: 16px 18px;
+            z-index: 100;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
         }
 
-        .tag-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; background: var(--accent-primary); color: white; font-size: 0.75rem; margin-left: 8px; font-family: 'JetBrains Mono'; }
-        
-        .controls { position: absolute; bottom: 24px; left: 24px; display: flex; gap: 8px; z-index: 100; }
-        .btn-round { width: 40px; height: 40px; border-radius: 10px; background: var(--panel-bg); border: 1px solid var(--border-panel); color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; }
-        .btn-round:hover { background: var(--accent-primary); }
+        /* ── Tag Badge ── */
+        .tag-badge {
+            display: inline-block;
+            padding: 2px 7px;
+            border-radius: var(--radius-sm);
+            background: var(--bg-raised);
+            border: 1px solid var(--border-normal);
+            color: var(--text-secondary);
+            font-size: 0.68rem;
+            font-weight: 600;
+            margin-left: 8px;
+            font-family: 'JetBrains Mono', monospace;
+        }
 
-        .hash-code { font-family: 'JetBrains Mono'; background: rgba(255,255,255,0.05); padding: 4px 8px; border-radius: 4px; font-size: 0.8rem; border: 1px solid var(--border-color); }
-        
-        /* Highlight specific node */
-        .node-highlighted { outline: 2px solid #ffca28; outline-offset: 4px; }
-        
-        /* Modal Commit Detail */
+        /* ── Controls (zoom) ── */
+        .controls {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            display: flex;
+            gap: 6px;
+            z-index: 100;
+        }
+        .btn-round {
+            width: 36px; height: 36px;
+            border-radius: var(--radius-md);
+            background: var(--panel-bg);
+            border: 1px solid var(--panel-border);
+            color: var(--text-secondary);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            transition: background var(--transition-fast), color var(--transition-fast);
+            line-height: 1;
+        }
+        .btn-round:hover {
+            background: var(--bg-raised);
+            color: var(--text-primary);
+            border-color: var(--border-strong);
+        }
+
+        /* ── Hash code ── */
+        .hash-code {
+            font-family: 'JetBrains Mono', monospace;
+            background: var(--bg-raised);
+            padding: 3px 8px;
+            border-radius: var(--radius-sm);
+            font-size: 0.78rem;
+            border: 1px solid var(--border-normal);
+            color: var(--text-secondary);
+        }
+
+        /* ── Modal Commit Detail ── */
         .modal-overlay {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.7); backdrop-filter: blur(5px);
-            z-index: 2000; display: none; align-items: center; justify-content: center;
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(6px);
+            z-index: 2000;
+            display: none;
+            align-items: center;
+            justify-content: center;
         }
         .modal-content {
-            background: #0d1117; width: 85%; max-width: 1000px; height: 85%;
-            border-radius: 12px; border: 1px solid var(--border-panel);
-            display: flex; flex-direction: column; box-shadow: 0 16px 64px rgba(0,0,0,0.8);
+            background: var(--bg-surface);
+            width: 85%;
+            max-width: 960px;
+            height: 82%;
+            border-radius: var(--radius-lg);
+            border: 1px solid var(--border-normal);
+            display: flex;
+            flex-direction: column;
+            box-shadow: var(--shadow-modal);
             font-family: 'Inter', sans-serif;
             animation: modalFadeIn 0.2s cubic-bezier(0.4, 0, 0.2, 1);
         }
-        @keyframes modalFadeIn { from { opacity: 0; transform: scale(0.98); } to { opacity: 1; transform: scale(1); } }
-        
+        @keyframes modalFadeIn {
+            from { opacity: 0; transform: scale(0.97) translateY(8px); }
+            to   { opacity: 1; transform: scale(1)    translateY(0); }
+        }
         .modal-header {
-            padding: 20px 24px; border-bottom: 1px solid var(--border-color);
-            display: flex; justify-content: space-between; align-items: flex-start;
+            padding: 18px 24px;
+            border-bottom: 1px solid var(--border-subtle);
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
             flex-shrink: 0;
         }
         .modal-body {
-            padding: 24px; overflow-y: auto; flex: 1; background: #010409;
-            scrollbar-width: thin; scrollbar-color: #30363d transparent;
-            border-bottom-left-radius: 12px; border-bottom-right-radius: 12px;
+            padding: 20px 24px;
+            overflow-y: auto;
+            flex: 1;
+            background: var(--bg-color);
+            scrollbar-width: thin;
+            scrollbar-color: #2a2a2a transparent;
+            border-bottom-left-radius: var(--radius-lg);
+            border-bottom-right-radius: var(--radius-lg);
         }
+
+        /* ── Copy icon ── */
         .copy-icon {
-            cursor: pointer; opacity: 0.7; transition: 0.2s; vertical-align: middle;
-            display: inline-flex; align-items: center; justify-content: center;
-            width: 24px; height: 24px; border-radius: 4px; background: rgba(255,255,255,0.06);
-            border: 1px solid rgba(255,255,255,0.12); margin-left: 6px; color: #8b949e;
+            cursor: pointer;
+            opacity: 0.6;
+            transition: opacity var(--transition-fast), background var(--transition-fast);
+            vertical-align: middle;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 22px; height: 22px;
+            border-radius: var(--radius-sm);
+            background: var(--bg-raised);
+            border: 1px solid var(--border-normal);
+            margin-left: 6px;
+            color: var(--text-muted);
         }
-        .copy-icon:hover { opacity: 1; background: rgba(47,129,247,0.2); border-color: #2f81f7; color: #58a6ff; }
-        .copy-icon svg { width: 14px; height: 14px; fill: currentColor; }
+        .copy-icon:hover { opacity: 1; background: var(--bg-hover); color: var(--text-primary); }
+        .copy-icon svg { width: 12px; height: 12px; fill: currentColor; }
     </style>
 </head>
 <body>
+    <!-- Barra superior GitSearch [VISUAL ONLY] -->
+    <div id="gs-topbar">
+        <div class="gs-brand">
+            <div class="gs-brand-dot"></div>
+            GitSearch
+        </div>
+        <div class="gs-separator"></div>
+        <div class="gs-subtitle">Git Version Traceability Explorer</div>
+    </div>
+
     <div id="mynetwork"></div>
 
+    <!-- Panel de leyenda del grafo [VISUAL ONLY] -->
     <div class="intro-panel">
-        <h2 style="margin:0; font-size:1.2rem;">Git Inspector</h2>
-        <div style="font-size:0.8rem; color:var(--text-secondary); margin-top:4px;">Mapa de Versiones y Commits</div>
-        <div style="margin-top:16px; font-size:0.75rem; color:var(--text-secondary);">
-            <div style="display:flex; align-items:center; gap:8px; margin-bottom:5px;">
-                <div style="width:10px; height:10px; border-radius:50%; background:#1f6feb;"></div> Rama Principal
+        <h2 style="margin:0 0 4px; font-size:0.88rem; font-weight:600; color:var(--text-primary);">Mapa de Versiones</h2>
+        <div style="font-size:0.72rem; color:var(--text-muted); margin-bottom:14px;">Historial de tags y commits</div>
+        <div style="font-size:0.72rem; color:var(--text-secondary);">
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:7px;">
+                <div style="width:8px; height:8px; border-radius:50%; background:#e0e0e0; flex-shrink:0;"></div>
+                Rama Principal
             </div>
             <div style="display:flex; align-items:center; gap:8px;">
-                <div style="width:10px; height:10px; border-radius:50%; background:#1a7f37;"></div> Rama Lateral
+                <div style="width:8px; height:8px; border-radius:50%; background:#666666; flex-shrink:0;"></div>
+                Rama Lateral
             </div>
         </div>
     </div>
@@ -796,24 +1099,26 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
         <div class="modal-content">
             <div class="modal-header">
                 <div style="flex:1;">
-                    <h2 id="modal-title" style="margin:0; font-size:1.3rem; color:#e6edf3; margin-bottom:8px; line-height:1.4;"></h2>
-                    <div id="modal-meta" style="color:var(--text-secondary); font-size:0.9rem;"></div>
+                    <!-- [VISUAL] modal-title color monocromático -->
+                    <h2 id="modal-title" style="margin:0; font-size:1.1rem; font-weight:600; color:var(--text-primary); margin-bottom:8px; line-height:1.4;"></h2>
+                    <div id="modal-meta" style="color:var(--text-secondary); font-size:0.82rem;"></div>
                 </div>
-                <button class="close-btn" style="position:static; margin-left:16px; font-size:28px;" onclick="document.getElementById('commit-modal').style.display='none'">&times;</button>
+                <button class="close-btn" style="position:static; margin-left:16px; font-size:24px;" onclick="document.getElementById('commit-modal').style.display='none'">&times;</button>
             </div>
             <div class="modal-body">
-                <div style="display:flex; gap:32px; margin-bottom: 24px; flex-wrap:wrap; background:rgba(255,255,255,0.03); padding:16px; border-radius:8px; border:1px solid var(--border-color);">
+                <!-- [VISUAL] info cards monocromáticas -->
+                <div style="display:flex; gap:24px; margin-bottom:20px; flex-wrap:wrap; background:var(--bg-raised); padding:14px 16px; border-radius:8px; border:1px solid var(--border-subtle);">
                     <div>
-                        <div class="section-title" style="margin-top:0; color:#8b949e;">Identificador (SHA)</div>
+                        <div class="section-title" style="margin-top:0;">Identificador (SHA)</div>
                         <div id="modal-hash-container" style="display:flex; align-items:center;"></div>
                     </div>
                     <div>
-                        <div class="section-title" style="margin-top:0; color:#8b949e;">Padres</div>
+                        <div class="section-title" style="margin-top:0;">Padres</div>
                         <div id="modal-parents-container" style="display:flex; align-items:center; gap:8px;"></div>
                     </div>
                 </div>
-                <div class="section-title" style="font-size:0.9rem; color:#8b949e; margin-bottom:12px;">Archivos Modificados y Cambios Reales (Diff)</div>
-                <div id="modal-diff" class="diff-container" style="margin-top:0; border:none; padding:0;"></div>
+                <div class="section-title" style="margin-bottom:10px;">Archivos Modificados y Cambios Reales (Diff)</div>
+                <div id="modal-diff" class="diff-container" style="margin-top:0;"></div>
             </div>
         </div>
     </div>
@@ -831,14 +1136,15 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
         let lastHighlightedNode = null;
 
         const container = document.getElementById('mynetwork');
+        // [VISUAL ONLY] Colores de nodos monocromáticos: blanco para rama principal, gris para laterales
         const nodes = new vis.DataSet(nodesData.map(n => ({
-            ...n, shape: 'dot', size: 14, borderWidth: 2,
-            color: { background: n.is_main ? '#1f6feb' : '#1a7f37', border: '#ffffff' },
-            font: { color: '#e6edf3', face: 'Inter', size: 13 }
+            ...n, shape: 'dot', size: 13, borderWidth: 2,
+            color: { background: n.is_main ? '#e0e0e0' : '#666666', border: n.is_main ? '#ffffff' : '#999999', highlight: { background: '#ffffff', border: '#ffffff' } },
+            font: { color: '#f0f0f0', face: 'Inter', size: 12 }
         })));
         const edges = new vis.DataSet(edgesData.map(e => ({
-            ...e, color: { color: '#30363d', highlight: '#58a6ff' },
-            dashes: e.is_parallel ? [5, 5] : false, width: 2
+            ...e, color: { color: '#333333', highlight: '#888888' },
+            dashes: e.is_parallel ? [4, 4] : false, width: 1.5
         })));
 
         const network = new vis.Network(container, { nodes, edges }, {
@@ -932,16 +1238,20 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
             }
         }
 
+        // [VISUAL ONLY] Tooltip copiado — paleta monocromática
         function mostrarTooltipCopiado(event) {
             const tt = document.createElement('div');
-            tt.textContent = '¡Copiado!';
+            tt.textContent = 'Copiado';
             Object.assign(tt.style, {
-                position: 'fixed', background: '#2ea043', color: '#fff', padding: '4px 8px', borderRadius: '4px',
-                fontSize: '12px', zIndex: '10000', left: (event.clientX + 10) + 'px', top: (event.clientY + 10) + 'px',
-                pointerEvents: 'none', animation: 'modalFadeIn 0.2s'
+                position: 'fixed', background: '#1a1a1a', border: '1px solid rgba(255,255,255,0.15)',
+                color: '#e0e0e0', padding: '4px 10px', borderRadius: '4px',
+                fontSize: '11px', fontFamily: 'Inter, sans-serif', fontWeight: '600',
+                letterSpacing: '0.03em', zIndex: '10000',
+                left: (event.clientX + 10) + 'px', top: (event.clientY + 10) + 'px',
+                pointerEvents: 'none', animation: 'modalFadeIn 0.15s'
             });
             document.body.appendChild(tt);
-            setTimeout(() => tt.remove(), 1200);
+            setTimeout(() => tt.remove(), 1000);
         }
 
         function showCommitModal(hash) {
@@ -953,7 +1263,8 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
             
             const msgList = (commit.mensaje_full || commit.mensaje || '').split('\\n');
             document.getElementById('modal-title').textContent = msgList[0];
-            document.getElementById('modal-meta').innerHTML = `👤 <strong style="color:#e6edf3;">${escapeHtml(commit.autor)}</strong> &nbsp;•&nbsp; 📅 ${commit.fecha}`;
+            // [VISUAL ONLY] Metadatos del modal con paleta monocromática
+            document.getElementById('modal-meta').innerHTML = `👤 <strong style="color:var(--text-primary);">${escapeHtml(commit.autor)}</strong> &nbsp;•&nbsp; 📅 ${commit.fecha}`;
             
             document.getElementById('modal-hash-container').innerHTML = `
                 <div class="hash-code" style="font-size:0.95rem;">${commit.full_hash || commit.hash}</div>
@@ -962,14 +1273,18 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
             
             const pContainer = document.getElementById('modal-parents-container');
             if (commit.parents && commit.parents.length > 0) {
+                // [VISUAL ONLY] Padres con estilos monocromáticos
                 pContainer.innerHTML = commit.parents.map(ph => `
                     <div style="display:flex; align-items:center;">
-                        <span class="gs-node-link" style="margin:0; font-family:'JetBrains Mono',monospace; font-size:0.85rem;" onclick="document.getElementById('commit-modal').style.display='none'; if(typeof gsNavParent==='function'){gsNavParent('${ph}');}else{selectCommitByHash('${ph}');}">↑ ${ph}</span>
+                        <span style="font-family:'JetBrains Mono',monospace; font-size:0.80rem; color:#888888;
+                              background:#111111; border:1px solid rgba(255,255,255,0.10); border-radius:4px;
+                              padding:2px 8px; cursor:pointer; transition:color 0.15s;"
+                              onclick="document.getElementById('commit-modal').style.display='none'; if(typeof gsNavParent==='function'){gsNavParent('${ph}');}else{selectCommitByHash('${ph}');}">↑ ${ph}</span>
                         ${getCopyBtnHtml(ph)}
                     </div>
                 `).join('');
             } else {
-                pContainer.innerHTML = '<span style="color:var(--text-secondary); font-size:0.85rem;">Ninguno (Raíz)</span>';
+                pContainer.innerHTML = '<span style="color:var(--text-muted); font-size:0.82rem;">Ninguno (Raíz)</span>';
             }
             
             let rawDiff = commit.diff && commit.diff.length > 5 ? commit.diff : "No se detectaron cambios en archivos o diff no disponible.";
@@ -980,15 +1295,15 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
 
 
         function highlightNode(nodeId) {
-            // Limpiar highlight anterior
+            // [VISUAL ONLY] Restaurar color monocromático al nodo anterior
             if (lastHighlightedNode) {
                 const old = nodes.get(lastHighlightedNode);
                 if (old) {
-                    nodes.update({ id: lastHighlightedNode, color: { background: old.is_main ? '#1f6feb' : '#1a7f37', border: '#ffffff' } });
+                    nodes.update({ id: lastHighlightedNode, color: { background: old.is_main ? '#e0e0e0' : '#666666', border: old.is_main ? '#ffffff' : '#999999' } });
                 }
             }
-            // Aplicar nuevo highlight (color dorado/ámbar para indicar "este es el origen")
-            nodes.update({ id: nodeId, color: { background: '#ffa000', border: '#ffd54f' } });
+            // [VISUAL ONLY] Highlight en blanco puro para nodo seleccionado
+            nodes.update({ id: nodeId, color: { background: '#ffffff', border: '#ffffff' } });
             lastHighlightedNode = nodeId;
         }
 
@@ -999,10 +1314,10 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
 
         function closePanel() {
             document.getElementById('side-panel').classList.remove('open');
-            // Limpiar highlights al cerrar
+            // [VISUAL ONLY] Limpiar highlights al cerrar — restaurar paleta monocromática
             if (lastHighlightedNode) {
                 const old = nodes.get(lastHighlightedNode);
-                if (old) nodes.update({ id: lastHighlightedNode, color: { background: old.is_main ? '#1f6feb' : '#1a7f37', border: '#ffffff' } });
+                if (old) nodes.update({ id: lastHighlightedNode, color: { background: old.is_main ? '#e0e0e0' : '#666666', border: old.is_main ? '#ffffff' : '#999999' } });
                 lastHighlightedNode = null;
             }
         }
@@ -1049,32 +1364,34 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
                     </div>
 
                     <div class="section-title">Commit Padre</div>
-                    <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:24px;">
+                    <!-- [VISUAL] Commit parent links monocromáticos -->
+                    <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:20px;">
                         ${(selectedCommit.parents && selectedCommit.parents.length > 0)
                             ? selectedCommit.parents.map((ph, i) => {
                                 const pFull = (selectedCommit.parents[i] || ph);
                                 return `<div style="display:flex; align-items:center;">
-                                    <span style="font-family:'JetBrains Mono',monospace; font-size:0.75rem; color:#58a6ff;
-                                    background:rgba(88,166,255,0.08); border:1px solid rgba(88,166,255,0.2);
+                                    <span style="font-family:'JetBrains Mono',monospace; font-size:0.72rem; color:#aaaaaa;
+                                    background:#1a1a1a; border:1px solid #333333;
                                     border-radius:4px; padding:3px 8px; cursor:pointer;"
                                     onclick="gsNavParent && gsNavParent('${ph}')"
-                                    title="Ir al commit padre ${ph}">↑ ${ph} ↗</span>
+                                    title="Ir al commit padre ${ph}">↑ ${ph}</span>
                                     ${getCopyBtnHtml(ph)}
                                     </div>`;
                               }).join('')
-                            : '<span style="font-size:0.75rem;color:var(--text-secondary);">Raíz — sin padre</span>'
+                            : '<span style="font-size:0.72rem;color:var(--text-muted);">Raíz — sin padre</span>'
                         }
                     </div>
 
-                    <div style="background:rgba(47,129,247,0.1); padding:16px; border-radius:8px; border:1px solid rgba(47,129,247,0.2);">
-                        <div class="section-title" style="margin-top:0; color:#58a6ff;">Analizar Cambios Reales</div>
-                        <div style="font-size:0.8rem; color:#8b949e; margin-bottom:12px; line-height:1.4;">
-                            Visualice gráficamente los archivos modificados, adiciones y supresiones que generó este commit.
+                    <!-- [VISUAL] Sección analizar diff — monocromática -->
+                    <div style="background:#141414; padding:14px 16px; border-radius:8px; border:1px solid var(--border-subtle);">
+                        <div class="section-title" style="margin-top:0;">Analizar Cambios Reales</div>
+                        <div style="font-size:0.78rem; color:var(--text-muted); margin-bottom:12px; line-height:1.5;">
+                            Visualice los archivos modificados, adiciones y supresiones de este commit.
                         </div>
-                        <button onclick="showCommitModal('${selectedCommit.full_hash}')" 
-                                style="background:#238636; border:1px solid rgba(240,246,252,0.1); color:#fff; padding:10px; border-radius:6px; cursor:pointer; font-weight:600; font-size:0.85rem; width:100%; display:flex; justify-content:center; align-items:center; gap:8px; transition:0.2s;"
-                                onmouseover="this.style.background='#2ea043'" onmouseout="this.style.background='#238636'">
-                            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M1.75 2.5a.25.25 0 0 0-.25.25v10.5c0 .138.112.25.25.25h12.5a.25.25 0 0 0 .25-.25v-8.5h-4a2 2 0 0 1-2-2v-4H1.75ZM7.5 4.51V1.535a.25.25 0 0 1 .427-.177l4.683 4.683A.25.25 0 0 1 12.433 6.5H9.5a2 2 0 0 1-2-1.99ZM10.5 8h-5a.75.75 0 0 0 0 1.5h5a.75.75 0 0 0 0-1.5Zm-5 3.5h5a.75.75 0 0 0 0-1.5h-5a.75.75 0 0 0 0 1.5Z"/></svg>
+                        <button onclick="showCommitModal('${selectedCommit.full_hash}')"
+                                style="background:#1a1a1a; border:1px solid var(--border-normal); color:var(--text-primary); padding:9px 14px; border-radius:6px; cursor:pointer; font-weight:600; font-size:0.80rem; width:100%; display:flex; justify-content:center; align-items:center; gap:8px; transition:background 0.15s, border-color 0.15s; font-family:inherit;"
+                                onmouseover="this.style.background='#222222'; this.style.borderColor='#555555'" onmouseout="this.style.background='#1a1a1a'; this.style.borderColor='rgba(255,255,255,0.10)'">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M1.75 2.5a.25.25 0 0 0-.25.25v10.5c0 .138.112.25.25.25h12.5a.25.25 0 0 0 .25-.25v-8.5h-4a2 2 0 0 1-2-2v-4H1.75ZM7.5 4.51V1.535a.25.25 0 0 1 .427-.177l4.683 4.683A.25.25 0 0 1 12.433 6.5H9.5a2 2 0 0 1-2-1.99ZM10.5 8h-5a.75.75 0 0 0 0 1.5h5a.75.75 0 0 0 0-1.5Zm-5 3.5h5a.75.75 0 0 0 0-1.5h-5a.75.75 0 0 0 0 1.5Z"/></svg>
                             Explorar Diffs y Archivos Afectados
                         </button>
                     </div>
@@ -1106,9 +1423,10 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
                     <div class="section-title">Resultados de Búsqueda Global: "${escapeHtml(globalSearchData.criterio)}" (${globalSearchData.total})</div>
                     <div class="commit-explorer-list">
                         ${globalSearchData.resultados.map(r => `
-                            <div class="ce-item ${selectedCommit && selectedCommit.hash == r.hash ? 'active' : ''}" onclick='selectCommitByHash("${r.full_hash}")' style="border-left: 3px solid #58a6ff;">
+                            <!-- [VISUAL] border-left monocromático en resultados -->
+                            <div class="ce-item ${selectedCommit && selectedCommit.hash == r.hash ? 'active' : ''}" onclick='selectCommitByHash("${r.full_hash}")' style="border-left: 2px solid #555555;">
                                 <div>
-                                    <div class="ce-hash">${r.hash} <span style="font-size:0.65rem; background:var(--accent-primary); padding:2px 4px; border-radius:3px; color:white; margin-left:4px;">${escapeHtml(r.tipo)}</span></div>
+                                    <div class="ce-hash">${r.hash} <span style="font-size:0.62rem; background:#1a1a1a; border:1px solid #333333; padding:1px 5px; border-radius:3px; color:#999999; margin-left:4px;">${escapeHtml(r.tipo)}</span></div>
                                     <div class="ce-msg" style="margin-top:4px; font-weight:600;">${escapeHtml(r.mensaje)}</div>
                                     <div class="ce-meta">${r.fecha} • ${escapeHtml(r.autor)}</div>
                                     ${r.tags && r.tags.length > 0 ? `<div style="margin-top:4px;"><span style="font-size:0.7rem; color:var(--text-secondary);">Versión/Tag:</span> <span class="tag-badge" style="margin-left:2px; font-size:0.65rem;">${escapeHtml(r.tags[0])}${r.tags.length>1?' (+' + (r.tags.length-1) + ')':''}</span></div>` : '<div style="margin-top:4px;"><span style="font-size:0.7rem; color:var(--text-secondary);">Versión/Tag: Ninguno</span></div>'}
@@ -1154,16 +1472,17 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
             }
         }
 
+        // [VISUAL ONLY] formatDiff usa paleta monocromática — sin azules ni verdes brillantes
         function formatDiff(txt) {
             return txt.split('\\n').map(line => {
                 const escaped = escapeHtml(line);
-                if (line.startsWith('diff --git')) return `\\n<div style="background:#161b22; padding:10px 14px; border-radius:6px; font-weight:600; border-left:4px solid #2f81f7; color:#e6edf3; margin-top:20px; font-size:0.85rem; box-shadow:0 4px 12px rgba(0,0,0,0.5);">📄 Archivo: <span style="color:#58a6ff;">${escaped.replace('diff --git ', '')}</span></div>`;
-                if (line.match(/^index [0-9a-f]+\\.\\.[0-9a-f]+/)) return `<div style="color:#7d8590; font-size:0.75rem; padding-left:14px; margin-bottom:8px;">${escaped}</div>`;
-                if (line.startsWith('--- a/') || line.startsWith('+++ b/')) return `<div style="color:#8b949e; font-size:0.78rem; padding-left:14px;">${escaped}</div>`;
-                if (line.startsWith('+') && !line.startsWith('+++')) return `<div class="diff-added" style="padding:1px 14px; background:rgba(46,160,67,0.15); color:#3FB950;">${escaped}</div>`;
-                if (line.startsWith('-') && !line.startsWith('---')) return `<div class="diff-removed" style="padding:1px 14px; background:rgba(248,81,73,0.15); color:#F85149;">${escaped}</div>`;
-                if (line.startsWith('@@')) return `<div class="diff-info" style="margin:12px 0 6px; padding:6px 14px; background:rgba(88,166,255,0.1); border-radius:4px; font-weight:600; color:#58a6ff;">${escaped}</div>`;
-                return `<div style="padding:1px 14px;">${escaped}</div>`;
+                if (line.startsWith('diff --git')) return `\\n<div style="background:#141414; padding:9px 14px; border-radius:4px; font-weight:600; border-left:3px solid #555555; color:#dddddd; margin-top:18px; font-size:0.80rem;">■ ${escaped.replace('diff --git ', '')}</div>`;
+                if (line.match(/^index [0-9a-f]+\\.\\.[0-9a-f]+/)) return `<div style="color:#555555; font-size:0.72rem; padding-left:14px; margin-bottom:6px;">${escaped}</div>`;
+                if (line.startsWith('--- a/') || line.startsWith('+++ b/')) return `<div style="color:#666666; font-size:0.72rem; padding-left:14px;">${escaped}</div>`;
+                if (line.startsWith('+') && !line.startsWith('+++')) return `<div class="diff-added" style="padding:1px 14px;">${escaped}</div>`;
+                if (line.startsWith('-') && !line.startsWith('---')) return `<div class="diff-removed" style="padding:1px 14px;">${escaped}</div>`;
+                if (line.startsWith('@@')) return `<div class="diff-info" style="margin:10px 0 4px; padding:5px 14px; background:#141414; border-radius:3px; font-weight:600;">${escaped}</div>`;
+                return `<div style="padding:1px 14px; color:#aaaaaa;">${escaped}</div>`;
             }).join('');
         }
 

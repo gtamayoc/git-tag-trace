@@ -35,230 +35,314 @@ def generar_panel_busqueda(commits_data: list) -> str:
      ══════════════════════════════════════════════════════════ -->
 
 <style>
-  /* ── GitSearch: botón flotante ── */
+  /*
+   * ── GitSearch Panel UI — Diseño Monocromático [VISUAL ONLY]
+   *    Paleta: negro / blanco / grises. Sin colores de acento fuertes.
+   *    Nota: todos los IDs y clases se mantienen idénticos para
+   *    compatibilidad con el JS existente.
+   */
+
+  /* ── Botón flotante de apertura ── */
   #gs-toggle-btn {{
     position: absolute;
-    top: 24px;
+    top: 60px; /* offset respecto a topbar principal */
     right: 530px;
     z-index: 200;
-    background: rgba(22,27,34,0.92);
-    border: 1px solid rgba(255,255,255,0.15);
-    color: #e6edf3;
-    border-radius: 10px;
-    padding: 8px 14px;
-    font-size: 0.82rem;
+    background: rgba(14, 14, 14, 0.94);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: #d0d0d0;
+    border-radius: 8px;
+    padding: 7px 14px;
+    font-size: 0.78rem;
     font-weight: 600;
     cursor: pointer;
     display: flex;
     align-items: center;
     gap: 6px;
-    backdrop-filter: blur(12px);
-    transition: background 0.2s, border-color 0.2s;
+    backdrop-filter: blur(16px);
+    font-family: 'Inter', sans-serif;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+    letter-spacing: 0.01em;
   }}
-  #gs-toggle-btn:hover {{ background: #2f81f7; border-color: #2f81f7; }}
+  #gs-toggle-btn:hover {{
+    background: #1a1a1a;
+    border-color: rgba(255, 255, 255, 0.25);
+    color: #ffffff;
+  }}
 
-  /* ── GitSearch: panel principal ── */
+  /* ── Panel principal ── */
   #gs-panel {{
     position: absolute;
-    top: 0;
+    top: 48px; /* offset topbar */
     right: 0;
-    width: 500px;
-    height: 100%;
-    background: rgba(13,17,23,0.98);
-    backdrop-filter: blur(24px);
-    border-left: 1px solid rgba(255,255,255,0.12);
-    box-shadow: -8px 0 32px rgba(0,0,0,0.6);
+    width: 480px;
+    height: calc(100% - 48px);
+    background: rgba(10, 10, 10, 0.98);
+    backdrop-filter: blur(28px);
+    border-left: 1px solid rgba(255, 255, 255, 0.07);
+    box-shadow: -6px 0 30px rgba(0, 0, 0, 0.7);
     z-index: 1100;
     display: flex;
     flex-direction: column;
     transform: translateX(100%);
-    transition: transform 0.35s cubic-bezier(0.4,0,0.2,1);
-    font-family: 'Inter', sans-serif;
+    transition: transform 0.32s cubic-bezier(0.4, 0, 0.2, 1);
+    font-family: 'Inter', -apple-system, sans-serif;
   }}
   #gs-panel.gs-open {{ transform: translateX(0); }}
 
-  /* ── Cabecera ── */
+  /* ── Cabecera del panel ── */
   #gs-header {{
-    padding: 20px 24px 16px;
-    border-bottom: 1px solid rgba(255,255,255,0.08);
+    padding: 16px 22px 14px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
     display: flex;
     align-items: center;
     justify-content: space-between;
     flex-shrink: 0;
   }}
   #gs-header h2 {{
-    margin: 0; font-size: 1rem; font-weight: 700; color: #e6edf3;
-    display: flex; align-items: center; gap: 8px;
+    margin: 0;
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: #e0e0e0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
   }}
   #gs-close {{
-    background: none; border: none; color: #7d8590;
-    font-size: 22px; cursor: pointer; line-height: 1; padding: 0 4px;
+    background: none;
+    border: none;
+    color: #555555;
+    font-size: 18px;
+    cursor: pointer;
+    line-height: 1;
+    padding: 3px 6px;
+    border-radius: 4px;
+    transition: color 0.15s, background 0.15s;
   }}
-  #gs-close:hover {{ color: #e6edf3; }}
+  #gs-close:hover {{ color: #e0e0e0; background: #1a1a1a; }}
 
   /* ── Formulario de búsqueda ── */
   #gs-form {{
-    padding: 16px 24px;
-    border-bottom: 1px solid rgba(255,255,255,0.08);
+    padding: 14px 22px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
     flex-shrink: 0;
   }}
   .gs-row {{ display: flex; gap: 8px; margin-bottom: 10px; }}
   .gs-row:last-child {{ margin-bottom: 0; }}
+
   .gs-input {{
     flex: 1;
-    background: #0d1117;
-    border: 1px solid rgba(255,255,255,0.12);
-    color: #e6edf3;
+    background: #111111;
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    color: #e0e0e0;
     padding: 8px 12px;
-    border-radius: 6px;
-    font-size: 0.82rem;
+    border-radius: 5px;
+    font-size: 0.80rem;
     outline: none;
     font-family: 'Inter', sans-serif;
+    transition: border-color 0.15s;
   }}
-  .gs-input:focus {{ border-color: #2f81f7; }}
-  .gs-input::placeholder {{ color: #4d5566; }}
+  .gs-input:focus {{ border-color: rgba(255, 255, 255, 0.25); }}
+  .gs-input::placeholder {{ color: #444444; }}
+
   .gs-btn-search {{
-    background: #2f81f7;
-    border: none;
-    color: white;
+    background: #1a1a1a;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    color: #e0e0e0;
     padding: 8px 16px;
-    border-radius: 6px;
-    font-size: 0.82rem;
+    border-radius: 5px;
+    font-size: 0.78rem;
     font-weight: 600;
     cursor: pointer;
     white-space: nowrap;
+    font-family: 'Inter', sans-serif;
+    transition: background 0.15s, border-color 0.15s;
   }}
-  .gs-btn-search:hover {{ background: #388bfd; }}
-  .gs-btn-clear {{
-    background: rgba(255,255,255,0.06);
-    border: 1px solid rgba(255,255,255,0.1);
-    color: #7d8590;
-    padding: 8px 10px;
-    border-radius: 6px;
-    font-size: 0.8rem;
-    cursor: pointer;
+  .gs-btn-search:hover {{
+    background: #242424;
+    border-color: rgba(255, 255, 255, 0.26);
   }}
-  .gs-btn-clear:hover {{ color: #e6edf3; }}
 
-  /* Radios de modo */
+  .gs-btn-clear {{
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: #555555;
+    padding: 8px 10px;
+    border-radius: 5px;
+    font-size: 0.80rem;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+  }}
+  .gs-btn-clear:hover {{ color: #aaaaaa; border-color: rgba(255, 255, 255, 0.18); }}
+
+  /* ── Selección de modo ── */
   .gs-modes {{ display: flex; gap: 4px; flex-wrap: wrap; }}
   .gs-mode-btn {{
-    background: rgba(255,255,255,0.05);
-    border: 1px solid rgba(255,255,255,0.1);
-    color: #7d8590;
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: #555555;
     padding: 4px 10px;
     border-radius: 20px;
-    font-size: 0.72rem;
+    font-size: 0.70rem;
     font-weight: 600;
     cursor: pointer;
-    transition: 0.15s;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+    font-family: 'Inter', sans-serif;
   }}
   .gs-mode-btn.active, .gs-mode-btn:hover {{
-    background: rgba(47,129,247,0.15);
-    border-color: #2f81f7;
-    color: #58a6ff;
+    background: #1a1a1a;
+    border-color: rgba(255, 255, 255, 0.20);
+    color: #cccccc;
   }}
 
-  /* ── Resultados ── */
+  /* ── Área de resultados ── */
   #gs-results-wrap {{
     flex: 1;
     overflow-y: auto;
-    padding: 16px 24px;
+    padding: 14px 22px;
     scrollbar-width: thin;
-    scrollbar-color: #30363d transparent;
+    scrollbar-color: #2a2a2a transparent;
   }}
+  #gs-results-wrap::-webkit-scrollbar {{ width: 4px; }}
+  #gs-results-wrap::-webkit-scrollbar-track {{ background: transparent; }}
+  #gs-results-wrap::-webkit-scrollbar-thumb {{ background: #2a2a2a; border-radius: 2px; }}
+
+  /* ── Status bar ── */
   #gs-status {{
-    font-size: 0.75rem;
-    color: #7d8590;
+    font-size: 0.70rem;
+    color: #555555;
     margin-bottom: 12px;
-    min-height: 18px;
+    min-height: 16px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
   }}
+
+  /* ── Tarjetas de resultado ── */
   .gs-result-item {{
-    padding: 12px 14px;
-    border-radius: 7px;
-    border: 1px solid rgba(255,255,255,0.07);
-    margin-bottom: 8px;
+    padding: 11px 13px;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    margin-bottom: 6px;
     cursor: pointer;
     transition: border-color 0.15s, background 0.15s;
+    background: transparent;
   }}
-  .gs-result-item:hover {{ border-color: #2f81f7; background: rgba(47,129,247,0.05); }}
-  .gs-result-item.gs-active {{ border-color: #58a6ff; background: rgba(88,166,255,0.08); }}
+  .gs-result-item:hover {{
+    border-color: rgba(255, 255, 255, 0.16);
+    background: #111111;
+  }}
+  .gs-result-item.gs-active {{
+    border-color: rgba(255, 255, 255, 0.22);
+    background: #111111;
+  }}
+
+  /* ── Hash en resultado ── */
   .gs-result-hash {{
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.75rem;
-    color: #58a6ff;
-    font-weight: 600;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 0.72rem;
+    color: #aaaaaa;
+    font-weight: 500;
     display: flex;
     align-items: center;
     gap: 8px;
     flex-wrap: wrap;
   }}
+
+  /* ── Badge de modo ── */
   .gs-badge {{
-    background: #1f6feb;
-    color: white;
-    font-size: 0.62rem;
-    padding: 1px 5px;
+    background: #1a1a1a;
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    color: #777777;
+    font-size: 0.60rem;
+    padding: 1px 6px;
     border-radius: 3px;
     font-family: 'Inter', sans-serif;
     font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
   }}
+
+  /* ── Mensaje del commit ── */
   .gs-result-msg {{
-    font-size: 0.83rem;
-    color: #e6edf3;
+    font-size: 0.80rem;
+    color: #e0e0e0;
     margin: 5px 0 3px;
     font-weight: 500;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }}
+
+  /* ── Metadata (autor / fecha) ── */
   .gs-result-meta {{
-    font-size: 0.7rem;
-    color: #7d8590;
-    margin-bottom: 6px;
-  }}
-  .gs-result-files {{
     font-size: 0.68rem;
-    color: #7d8590;
-    margin-bottom: 6px;
+    color: #555555;
+    margin-bottom: 5px;
+  }}
+
+  /* ── Archivos afectados ── */
+  .gs-result-files {{
+    font-size: 0.65rem;
+    color: #555555;
+    margin-bottom: 5px;
     font-family: 'JetBrains Mono', monospace;
   }}
+
+  /* ── Links de padres ── */
   .gs-parent-row {{
     display: flex;
     align-items: center;
     gap: 6px;
     flex-wrap: wrap;
-    margin-top: 4px;
+    margin-top: 5px;
   }}
   .gs-parent-label {{
-    font-size: 0.68rem;
-    color: #4d5566;
+    font-size: 0.65rem;
+    color: #444444;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
   }}
   .gs-parent-link {{
     font-family: 'JetBrains Mono', monospace;
-    font-size: 0.7rem;
-    color: #58a6ff;
-    background: rgba(88,166,255,0.08);
-    border: 1px solid rgba(88,166,255,0.2);
-    border-radius: 4px;
-    padding: 1px 6px;
+    font-size: 0.68rem;
+    color: #888888;
+    background: #111111;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 3px;
+    padding: 1px 7px;
     cursor: pointer;
     text-decoration: none;
+    transition: color 0.15s, border-color 0.15s;
   }}
-  .gs-parent-link:hover {{ background: rgba(88,166,255,0.2); }}
+  .gs-parent-link:hover {{
+    color: #cccccc;
+    border-color: rgba(255, 255, 255, 0.20);
+  }}
+
+  /* ── Link "ver nodo ↗" ── */
   .gs-node-link {{
-    font-size: 0.68rem;
-    color: #ffa000;
-    background: rgba(255,160,0,0.08);
-    border: 1px solid rgba(255,160,0,0.2);
-    border-radius: 4px;
-    padding: 1px 6px;
+    font-size: 0.65rem;
+    color: #666666;
+    background: #111111;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 3px;
+    padding: 1px 7px;
     cursor: pointer;
     margin-left: auto;
+    transition: color 0.15s, border-color 0.15s;
+    font-family: 'Inter', sans-serif;
   }}
-  .gs-node-link:hover {{ background: rgba(255,160,0,0.2); }}
+  .gs-node-link:hover {{
+    color: #cccccc;
+    border-color: rgba(255, 255, 255, 0.20);
+  }}
+
+  /* ── Sin resultados ── */
   .gs-no-results {{
-    color: #4d5566;
-    font-size: 0.82rem;
+    color: #444444;
+    font-size: 0.78rem;
     text-align: center;
     padding: 32px 0;
   }}

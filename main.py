@@ -15,6 +15,12 @@ from pathlib import Path
 from typing import Optional
 
 try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
+try:
     from git import Repo, InvalidGitRepositoryError, NoSuchPathError
 except ImportError:
     print("[ERROR] GitPython no está instalado. Ejecuta start.bat para configurar el entorno.")
@@ -360,8 +366,10 @@ def calcular_commits_exclusivos_tag(
         commits_data = [
             {
                 "hash":    c.hexsha[:7],
+                "full_hash": c.hexsha,
                 "autor":   c.author.name,
-                "mensaje": c.message.strip().splitlines()[0][:80],
+                "mensaje": c.message.strip().splitlines()[0][:80] if c.message else "",
+                "mensaje_full": c.message.strip() if c.message else "",
                 "fecha":   datetime.fromtimestamp(c.committed_date).strftime("%Y-%m-%d %H:%M"),
             }
             for c in commits
@@ -543,7 +551,8 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
 
     # Agrega aquí los prefijos de tus tags que quieras recortar del label visual.
     # Ejemplo: ["mi_proyecto_prod_", "release_"] → "mi_proyecto_prod_v1.2" → "v1.2"
-    PREFIJOS_LIMPIAR: list[str] = []
+    env_prefixes = os.getenv("TAG_PREFIXES", "")
+    PREFIJOS_LIMPIAR: list[str] = [p.strip() for p in env_prefixes.split(",") if p.strip()]
 
     def limpiar_label(nombre):
         for pfx in PREFIJOS_LIMPIAR:
@@ -603,12 +612,16 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
             for padre_sha in padres:
                 n_exc = stats.get("num_commits", "")
                 edges.append({
+                    "id": f"{padre_sha}_{sha}",
                     "from": padre_sha, "to": sha, "arrows": "to",
                     "label": f"{n_exc} commits" if n_exc else "",
                     "is_parallel": not es_main
                 })
         elif i > 0:
-            edges.append({"from": shas_ordenados[i-1], "to": sha, "arrows": "to", "is_parallel": False})
+            edges.append({
+                "id": f"{shas_ordenados[i-1]}_{sha}",
+                "from": shas_ordenados[i-1], "to": sha, "arrows": "to", "is_parallel": False
+            })
 
     html_template = """<!DOCTYPE html>
 <html lang="es">
@@ -1092,6 +1105,7 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
         <button class="btn-round" onclick="network.moveTo({scale: network.getScale()*1.5, animation:true})">+</button>
         <button class="btn-round" onclick="network.moveTo({scale: network.getScale()/1.5, animation:true})">-</button>
         <button class="btn-round" onclick="network.fit({animation:true})">⛶</button>
+        <button class="btn-round" id="btn-lock" onclick="toggleNodeLock()" title="Modo Libre (Arrastrable)" style="font-size: 14px;">🔓</button>
     </div>
 
     <!-- Modal Commit Detail -->
@@ -1148,17 +1162,54 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
         })));
 
         const network = new vis.Network(container, { nodes, edges }, {
-            layout: { hierarchical: { direction: 'UD', sortMethod: 'directed', levelSeparation: 150 } },
-            interaction: { hover: false, dragNodes: false, zoomView: true, dragView: true },
-            physics: { enabled: false }
+            layout: { hierarchical: { enabled: true, direction: 'UD', sortMethod: 'directed', levelSeparation: 150, nodeSpacing: 100 } },
+            interaction: { hover: true, dragNodes: true, zoomView: true, dragView: true, selectConnectedEdges: false },
+            physics: { 
+                enabled: false, // Desactivado para que el movimiento sea manual y preciso
+                hierarchicalRepulsion: { nodeDistance: 140, centralGravity: 0.0, springLength: 100, springConstant: 0.01, damping: 0.09 },
+                solver: 'hierarchicalRepulsion'
+            }
         });
 
-        // PARCHE: Evitar que el mapa siga el movimiento del cursor si el ratón se suelta fuera o si el DOM pierde el enfoque del click.
-        // Esto desactiva el 'stuck drag' de vis-network soltando manualmente la cámara.
-        window.addEventListener("pointerup", () => {
+        // Feedback de cursor para "Comodidad" al mover nodos
+        network.on("hoverNode", () => container.style.cursor = 'grab');
+        network.on("blurNode",  () => container.style.cursor = 'default');
+        network.on("dragStart", (p) => { if(p.nodes.length > 0) container.style.cursor = 'grabbing'; });
+        network.on("dragEnd",   () => container.style.cursor = 'grab');
+
+        let nodesLocked = false; // Por defecto empezamos en modo libre para "acomodar a gusto"
+        function toggleNodeLock() {
+            nodesLocked = !nodesLocked;
+            const btn = document.getElementById('btn-lock');
+            btn.textContent = nodesLocked ? '🔒' : '🔓';
+            btn.title = nodesLocked ? "Modo Jerárquico (Fijo)" : "Modo Libre (Arrastrable)";
+            
+            // Si está bloqueado, forzamos la jerarquía y desactivamos el arrastre
+            network.setOptions({ 
+                layout: { hierarchical: { enabled: nodesLocked } },
+                interaction: { dragNodes: !nodesLocked }
+            });
+            
+            // Si desbloqueamos, permitimos que los nodos se queden donde el usuario los deje
+            if (!nodesLocked) {
+                 network.setOptions({ physics: { enabled: false } });
+            }
+        }
+        
+        // Exponer función para obtener posiciones actuales (útil para ajustes o guardado manual)
+        window.getNodesPosition = () => {
+            const pos = network.getPositions();
+            return nodes.get().map(n => ({ id: n.id, label: n.label, x: pos[n.id].x, y: pos[n.id].y }));
+        };
+
+        // PARCHE REFINADO: Evitar que el mapa siga el movimiento si el ratón se suelta fuera.
+        window.addEventListener("pointerup", (e) => {
             if (typeof network !== 'undefined') {
-                network.setOptions({ interaction: { dragView: false } });
-                network.setOptions({ interaction: { dragView: true } });
+                // Solo reiniciamos si no estamos sobre la zona de controles o panel
+                if (!e.target.closest('.controls') && !e.target.closest('.side-panel')) {
+                    network.setOptions({ interaction: { dragView: false } });
+                    network.setOptions({ interaction: { dragView: true } });
+                }
             }
         });
 
@@ -1170,6 +1221,23 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
             }, 500);
         }
 
+        let expandedTagId = null;
+        let expandedNodes = [];
+        let expandedEdges = [];
+        let originalEdgeId = null;
+
+        function collapseCommits() {
+            if (expandedNodes.length > 0) nodes.remove(expandedNodes);
+            if (expandedEdges.length > 0) edges.remove(expandedEdges);
+            if (originalEdgeId) {
+                try { edges.update({id: originalEdgeId, hidden: false}); } catch(e) {}
+            }
+            expandedNodes = [];
+            expandedEdges = [];
+            expandedTagId = null;
+            originalEdgeId = null;
+        }
+
         network.on("click", (params) => {
             // Desenlazar un posible enganche del drag después de click
             network.setOptions({ interaction: { dragView: false } });
@@ -1178,15 +1246,124 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
             if (params.nodes.length > 0) {
                 const tagSha = params.nodes[0];
                 const node = nodes.get(tagSha);
+                
+                // Si es un commit intermedio expandido
+                if (node.is_expanded_commit) {
+                    selectCommitByHash(node.commit_hash, node.id);
+                    return;
+                }
+                
                 selectedNode = node;
                 // Por defecto cargamos el commit del tag
                 const commit = historyData.find(c => c.full_hash === tagSha || c.hash === node.hash);
                 if (commit) {
                     selectedCommit = commit;
                     openPanel();
+                    highlightNode(tagSha);
+                }
+
+                // --------- EXPANDIR NODO ---------
+                if (expandedTagId === tagSha) {
+                    collapseCommits();
+                } else {
+                    collapseCommits();
+                    
+                    if (node && node.stats && node.stats.commits_list && node.stats.commits_list.length > 0) {
+                        expandedTagId = tagSha;
+                        
+                        // Buscar el edge original desde el padre
+                        let parentEdg = null;
+                        const connectedEdges = network.getConnectedEdges(tagSha);
+                        for (let eId of connectedEdges) {
+                            const e = edges.get(eId);
+                            if (e && e.to === tagSha && e.from !== tagSha && !e.hidden) {
+                                parentEdg = e;
+                                break;
+                            }
+                        }
+                        
+                        let startSha = tagSha;
+                        let isAttachedToParent = false;
+                        if (parentEdg) {
+                            originalEdgeId = parentEdg.id;
+                            edges.update({id: originalEdgeId, hidden: true});
+                            startSha = parentEdg.from;
+                            isAttachedToParent = true;
+                        }
+                        
+                        const commits = [...node.stats.commits_list].reverse(); // oldest to newest
+                        const newNodes = [];
+                        const newEdges = [];
+                        
+                        for (let i = 0; i < commits.length; i++) {
+                            const c = commits[i];
+                            const cId = "exp_" + c.hash;
+                            
+                            const msgLines = (c.mensaje_full || c.mensaje || c.hash).split('\\n');
+                            let labelTxt = msgLines[0];
+                            if (msgLines.length > 1) {
+                                const descs = msgLines.slice(1).filter(l => l.trim() !== '');
+                                for (let j = 0; j < Math.min(descs.length, 4); j++) {
+                                    labelTxt += '\\n- ' + descs[j].trim();
+                                }
+                                if (descs.length > 4) labelTxt += '\\n...';
+                            }
+                            
+                            const titleTxt = `Hash: ${c.hash}\\nAutor: ${c.autor}\\nFecha: ${c.fecha}\\n\\n${c.mensaje_full || c.mensaje}`;
+                            
+                            newNodes.push({
+                                id: cId,
+                                is_expanded_commit: true,
+                                commit_hash: c.full_hash || c.hash,
+                                label: labelTxt,
+                                title: titleTxt,
+                                shape: 'box',
+                                color: { background: '#2a2a2a', border: '#555555', highlight: { background: '#444444', border: '#ffffff'} },
+                                font: { color: '#cccccc', size: 10, face: 'Inter', align: 'left' }
+                            });
+                            
+                            if (i === 0) {
+                                if (isAttachedToParent) {
+                                    newEdges.push({
+                                        id: `exp_edge_start`,
+                                        from: startSha,
+                                        to: cId,
+                                        arrows: "to",
+                                        color: { color: '#aaaaaa' }
+                                    });
+                                }
+                            } else {
+                                newEdges.push({
+                                    id: `exp_edge_${i}`,
+                                    from: "exp_" + commits[i-1].hash,
+                                    to: cId,
+                                    arrows: "to",
+                                    color: { color: '#555555' }
+                                });
+                            }
+                        }
+                        
+                        if (commits.length > 0) {
+                            newEdges.push({
+                                id: `exp_edge_end`,
+                                from: "exp_" + commits[commits.length-1].hash,
+                                to: tagSha,
+                                arrows: "to",
+                                color: { color: '#aaaaaa' },
+                                dashes: [2, 2]
+                            });
+                        }
+                        
+                        nodes.add(newNodes);
+                        edges.add(newEdges);
+                        
+                        expandedNodes = newNodes.map(n => n.id);
+                        expandedEdges = newEdges.map(e => e.id);
+                    }
                 }
             } else {
                 closePanel();
+                collapseCommits();
             }
         });
 
@@ -1439,7 +1616,7 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
             }
         }
 
-        function selectCommitByHash(hash) {
+        function selectCommitByHash(hash, clickedNodeId = null) {
             // Primero buscar en el historial global para obtener metadatos completos
             let c = historyData.find(x => x.full_hash === hash || x.hash === hash);
             
@@ -1463,11 +1640,20 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
                 selectedCommit = c;
                 setPanelTab('info');
                 
-                // Destacar nodo en que habita (si está asociado a uno)
-                const ownerNodeSha = commitToTag[c.full_hash] || commitToTag[c.hash];
-                if (ownerNodeSha) {
-                    highlightNode(ownerNodeSha);
-                    network.focus(ownerNodeSha, { scale: 1.2, animation: true });
+                let targetNodeId = clickedNodeId;
+                if (!targetNodeId) {
+                    const expandedId = "exp_" + c.hash;
+                    if (nodes.get(expandedId)) {
+                        targetNodeId = expandedId;
+                    } else {
+                        targetNodeId = commitToTag[c.full_hash] || commitToTag[c.hash];
+                    }
+                }
+                
+                if (targetNodeId) {
+                    highlightNode(targetNodeId);
+                    network.focus(targetNodeId, { scale: 1.2, animation: true });
+                    try { network.selectNodes([targetNodeId]); } catch(e){}
                 }
             }
         }

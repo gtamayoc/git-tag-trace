@@ -69,9 +69,9 @@ call "%VENV_DIR%\Scripts\activate.bat"
 :: ── Instalar dependencias
 echo [INFO] Instalando/verificando dependencias...
 pip install --quiet --upgrade pip
-pip install --quiet GitPython
+pip install --quiet -r requirements.txt
 if %ERRORLEVEL% neq 0 (
-    echo [ERROR] No se pudo instalar GitPython.
+    echo [ERROR] No se pudieron instalar las dependencias básicas.
     pause
     exit /b 1
 )

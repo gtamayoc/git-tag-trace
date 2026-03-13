@@ -371,6 +371,7 @@ def calcular_commits_exclusivos_tag(
                 "mensaje": c.message.strip().splitlines()[0][:80] if c.message else "",
                 "mensaje_full": c.message.strip() if c.message else "",
                 "fecha":   datetime.fromtimestamp(c.committed_date).strftime("%Y-%m-%d %H:%M"),
+                "parents": [p.hexsha[:7] for p in c.parents]
             }
             for c in commits
         ]
@@ -610,12 +611,19 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
 
         if topologia:
             for padre_sha in padres:
-                n_exc = stats.get("num_commits", "")
+                n_exc = stats.get("num_commits", 0)
+                n_arch = stats.get("num_archivos", 0)
+                edge_label = ""
+                if n_exc > 0:
+                     edge_label = f"{n_exc} cmts" + (f" • {n_arch} files" if n_arch else "")
+                     
                 edges.append({
                     "id": f"{padre_sha}_{sha}",
                     "from": padre_sha, "to": sha, "arrows": "to",
-                    "label": f"{n_exc} commits" if n_exc else "",
-                    "is_parallel": not es_main
+                    "label": edge_label,
+                    "is_parallel": not es_main,
+                    "n_archivos": n_arch,
+                    "n_commits": n_exc
                 })
         elif i > 0:
             edges.append({
@@ -634,37 +642,34 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
         /* ═══════════════════════════════════════════════════════════
-           GitSearch UI — Monochromatic Design System
-           Solo cambios visuales / Only visual changes
+           GitSearch UI — Theming System & Styling
            ═══════════════════════════════════════════════════════════ */
-        :root {
-            /* Paleta monocromática — blanco / negro / grises */
-            --bg-color:        #0a0a0a;
-            --bg-surface:      #111111;
-            --bg-raised:       #1a1a1a;
-            --bg-hover:        #222222;
-            --panel-bg:        rgba(14, 14, 14, 0.97);
+        :root, .gs-theme-dark {
+            /* Modo Oscuro Balanceado (No negro absoluto) */
+            --bg-color:        #181a1f;
+            --bg-surface:      #21242b;
+            --bg-raised:       #292d36;
+            --bg-hover:        #323742;
+            --panel-bg:        rgba(33, 36, 43, 0.96);
             --panel-border:    rgba(255, 255, 255, 0.08);
 
-            --text-primary:    #f0f0f0;
-            --text-secondary:  #888888;
-            --text-muted:      #555555;
+            --text-primary:    #e4e6eb;
+            --text-secondary:  #a0a4ab;
+            --text-muted:      #7a7e85;
 
-            /* Acentos monocromáticos — sin colores fuertes */
-            --accent-primary:  #e0e0e0;
-            --accent-dim:      #666666;
+            --accent-primary:  #d0d0d0;
+            --accent-dim:      #60646b;
             --accent-active:   #ffffff;
 
-            --border-subtle:   rgba(255, 255, 255, 0.06);
-            --border-normal:   rgba(255, 255, 255, 0.10);
-            --border-strong:   rgba(255, 255, 255, 0.18);
+            --border-subtle:   rgba(255, 255, 255, 0.08);
+            --border-normal:   rgba(255, 255, 255, 0.12);
+            --border-strong:   rgba(255, 255, 255, 0.20);
 
-            /* Diff colors — atenuados para no romper monocromatismo */
             --diff-added:      #4a9960;
             --diff-removed:    #b55050;
 
-            --shadow-panel:    0 8px 40px rgba(0, 0, 0, 0.7);
-            --shadow-modal:    0 20px 80px rgba(0, 0, 0, 0.9);
+            --shadow-panel:    0 8px 40px rgba(0, 0, 0, 0.5);
+            --shadow-modal:    0 20px 80px rgba(0, 0, 0, 0.7);
             --panel-width:     500px;
 
             --radius-sm:  4px;
@@ -673,6 +678,34 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
 
             --transition-fast: 0.15s ease;
             --transition-med:  0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .gs-theme-light {
+            /* Modo Claro Cálido (Blanco hueso/suave) */
+            --bg-color:        #f4f2ee;
+            --bg-surface:      #e9e6e0;
+            --bg-raised:       #dfdbd4;
+            --bg-hover:        #d4cfc7;
+            --panel-bg:        rgba(233, 230, 224, 0.96);
+            --panel-border:    rgba(0, 0, 0, 0.12);
+
+            --text-primary:    #1a1a1a;
+            --text-secondary:  #4a4a4a;
+            --text-muted:      #666666;
+
+            --accent-primary:  #333333;
+            --accent-dim:      #aaaaaa;
+            --accent-active:   #000000;
+
+            --border-subtle:   rgba(0, 0, 0, 0.08);
+            --border-normal:   rgba(0, 0, 0, 0.14);
+            --border-strong:   rgba(0, 0, 0, 0.25);
+
+            --diff-added:      #2e7a43;
+            --diff-removed:    #a83232;
+
+            --shadow-panel:    0 12px 30px rgba(0, 0, 0, 0.15);
+            --shadow-modal:    0 20px 60px rgba(0, 0, 0, 0.25);
         }
 
         /* ── Reset y base ── */
@@ -1105,7 +1138,8 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
         <button class="btn-round" onclick="network.moveTo({scale: network.getScale()*1.5, animation:true})">+</button>
         <button class="btn-round" onclick="network.moveTo({scale: network.getScale()/1.5, animation:true})">-</button>
         <button class="btn-round" onclick="network.fit({animation:true})">⛶</button>
-        <button class="btn-round" id="btn-lock" onclick="toggleNodeLock()" title="Modo Libre (Arrastrable)" style="font-size: 14px;">🔓</button>
+        <button class="btn-round" id="btn-lock" onclick="toggleNodeLock()" title="Alternar Modo de Layout" style="font-size: 0.75rem; width: auto; padding: 0 10px; font-weight: 500;">🧊 Fijo</button>
+        <button class="btn-round" onclick="toggleTheme()" title="Cambiar Tema (Claro / Oscuro)">🌓</button>
     </div>
 
     <!-- Modal Commit Detail -->
@@ -1150,49 +1184,143 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
         let lastHighlightedNode = null;
 
         const container = document.getElementById('mynetwork');
-        // [VISUAL ONLY] Colores de nodos monocromáticos: blanco para rama principal, gris para laterales
-        const nodes = new vis.DataSet(nodesData.map(n => ({
-            ...n, shape: 'dot', size: 13, borderWidth: 2,
-            color: { background: n.is_main ? '#e0e0e0' : '#666666', border: n.is_main ? '#ffffff' : '#999999', highlight: { background: '#ffffff', border: '#ffffff' } },
-            font: { color: '#f0f0f0', face: 'Inter', size: 12 }
-        })));
-        const edges = new vis.DataSet(edgesData.map(e => ({
-            ...e, color: { color: '#333333', highlight: '#888888' },
-            dashes: e.is_parallel ? [4, 4] : false, width: 1.5
-        })));
+        let savedPositions = {};
+        try { savedPositions = JSON.parse(localStorage.getItem('gitsearch_positions')) || {}; } catch(e){}
+        let nodesLocked = localStorage.getItem('gitsearch_locked') === 'true';
+
+        const THEMES_CONFIG = {
+            dark: { mainBg: '#e4e6eb', mainBorder: '#ffffff', sideBg: '#60646b', sideBorder: '#9aa0a6', edge: '#4a4d54', edgeHi: '#888d96', font: '#e4e6eb' },
+            light: { mainBg: '#21242b', mainBorder: '#000000', sideBg: '#b1b6bd', sideBorder: '#8a8f96', edge: '#a8adb5', edgeHi: '#60646b', font: '#21242b' }
+        };
+        let currentTheme = localStorage.getItem('gs_theme') || 'dark';
+
+        // Apply theme initially
+        if (currentTheme === 'light') document.documentElement.classList.add('gs-theme-light');
+
+        function toggleTheme() {
+            currentTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            localStorage.setItem('gs_theme', currentTheme);
+            if (currentTheme === 'light') {
+                document.documentElement.classList.add('gs-theme-light');
+                document.documentElement.classList.remove('gs-theme-dark');
+            } else {
+                document.documentElement.classList.add('gs-theme-dark');
+                document.documentElement.classList.remove('gs-theme-light');
+            }
+            updateNetworkColors();
+        }
+
+        // Apply visual differentiation for changes without overloading
+        function getEdgeWidth(nCommits) {
+            return 1.0 + Math.min((nCommits || 0) * 0.1, 3.5);
+        }
+
+        const nodes = new vis.DataSet(nodesData.map(n => {
+            const pos = savedPositions[n.id];
+            const t = THEMES_CONFIG[currentTheme];
+            return {
+                ...n, shape: 'dot', size: 13, borderWidth: 2,
+                color: { background: n.is_main ? t.mainBg : t.sideBg, border: n.is_main ? t.mainBorder : t.sideBorder, highlight: { background: t.mainBorder, border: t.mainBorder } },
+                font: { color: t.font, face: 'Inter', size: 12 },
+                x: pos ? pos.x : undefined,
+                y: pos ? pos.y : undefined
+            };
+        }));
+        
+        const edges = new vis.DataSet(edgesData.map(e => {
+            const t = THEMES_CONFIG[currentTheme];
+            return {
+                ...e, color: { color: t.edge, highlight: t.edgeHi },
+                dashes: e.is_parallel ? [4, 4] : false, width: getEdgeWidth(e.n_commits || 0),
+                font: { align: 'middle', size: 10, color: 'var(--text-muted)' }
+            };
+        }));
+
+        const hasBranchesGlobal = edgesData.some(e => edgesData.filter(e2 => e2.to === e.to).length > 1);
+        let baseLevelSep = hasBranchesGlobal ? 130 : 200;
+        let baseNodeSpac = hasBranchesGlobal ? 80  : 160;
 
         const network = new vis.Network(container, { nodes, edges }, {
-            layout: { hierarchical: { enabled: true, direction: 'UD', sortMethod: 'directed', levelSeparation: 150, nodeSpacing: 100 } },
+            edges: {
+                smooth: {
+                    type: 'cubicBezier',
+                    forceDirection: 'vertical',
+                    roundness: 0.4
+                }
+            },
+            layout: { hierarchical: { enabled: true, direction: 'UD', sortMethod: 'directed', levelSeparation: baseLevelSep, nodeSpacing: baseNodeSpac } },
             interaction: { hover: true, dragNodes: true, zoomView: true, dragView: true, selectConnectedEdges: false },
             physics: { 
-                enabled: false, // Desactivado para que el movimiento sea manual y preciso
-                hierarchicalRepulsion: { nodeDistance: 140, centralGravity: 0.0, springLength: 100, springConstant: 0.01, damping: 0.09 },
+                enabled: true, // Smooth initial loading
+                stabilization: { enabled: true, iterations: 60, updateInterval: 10, fit: true },
+                hierarchicalRepulsion: { nodeDistance: baseLevelSep, centralGravity: 0.05, springLength: baseLevelSep, springConstant: 0.05, damping: 0.3 },
                 solver: 'hierarchicalRepulsion'
             }
         });
+
+        // Event for smooth settling visually
+        network.once("stabilizationIterationsDone", function () {
+            if (nodesLocked) {
+                network.setOptions({ physics: { enabled: false } }); // Lock into place
+            }
+        });
+
+        function updateNetworkColors() {
+            const t = THEMES_CONFIG[currentTheme];
+            nodes.forEach(n => {
+                if(n.is_expanded_commit) {
+                    nodes.update({id: n.id, color: { background: currentTheme === 'dark' ? '#2a2a2a' : '#dfdbd4', border: currentTheme === 'dark' ? '#555555' : '#b1b6bd' }, font: { color: t.font }});
+                } else {
+                    nodes.update({id: n.id, color: { background: n.is_main ? t.mainBg : t.sideBg, border: n.is_main ? t.mainBorder : t.sideBorder }, font: { color: t.font }});
+                }
+            });
+            edges.forEach(e => {
+                edges.update({id: e.id, color: { color: t.edge, highlight: t.edgeHi }});
+            });
+            if (lastHighlightedNode) highlightNode(lastHighlightedNode);
+        }
 
         // Feedback de cursor para "Comodidad" al mover nodos
         network.on("hoverNode", () => container.style.cursor = 'grab');
         network.on("blurNode",  () => container.style.cursor = 'default');
         network.on("dragStart", (p) => { if(p.nodes.length > 0) container.style.cursor = 'grabbing'; });
-        network.on("dragEnd",   () => container.style.cursor = 'grab');
+        network.on("dragEnd",   (params) => { 
+            container.style.cursor = 'grab'; 
+            if (params.nodes.length > 0) {
+                const pos = network.getPositions(params.nodes);
+                Object.assign(savedPositions, pos);
+                try { localStorage.setItem('gitsearch_positions', JSON.stringify(savedPositions)); } catch(e){}
+            }
+        });
 
-        let nodesLocked = false; // Por defecto empezamos en modo libre para "acomodar a gusto"
+        function updateLockBtn() {
+            const btn = document.getElementById('btn-lock');
+            btn.textContent = nodesLocked ? '🧊 Modo Estricto' : '🌊 Modo Dinámico';
+            btn.title = nodesLocked ? "Modo Estricto: Nodos fijos sin físicas (más estable)" : "Modo Dinámico: Físicas suaves al mover ramas";
+        }
+        updateLockBtn();
+
         function toggleNodeLock() {
             nodesLocked = !nodesLocked;
-            const btn = document.getElementById('btn-lock');
-            btn.textContent = nodesLocked ? '🔒' : '🔓';
-            btn.title = nodesLocked ? "Modo Jerárquico (Fijo)" : "Modo Libre (Arrastrable)";
+            localStorage.setItem('gitsearch_locked', nodesLocked);
+            updateLockBtn();
             
-            // Si está bloqueado, forzamos la jerarquía y desactivamos el arrastre
-            network.setOptions({ 
-                layout: { hierarchical: { enabled: nodesLocked } },
-                interaction: { dragNodes: !nodesLocked }
-            });
-            
-            // Si desbloqueamos, permitimos que los nodos se queden donde el usuario los deje
-            if (!nodesLocked) {
-                 network.setOptions({ physics: { enabled: false } });
+            if (nodesLocked) {
+                // Modo Fijo/Estricto: desactiva físicas para que no se reacomode violentamente
+                network.setOptions({ 
+                    layout: { hierarchical: { enabled: true, direction: 'UD', sortMethod: 'directed' } },
+                    physics: { enabled: false }
+                });
+            } else {
+                // Modo Dinámico: jerárquico + solver repulsion
+                network.setOptions({ 
+                    layout: { hierarchical: { enabled: false } },
+                    physics: { 
+                        enabled: true, 
+                        solver: 'repulsion', 
+                        repulsion: { nodeDistance: 130, springLength: 200, damping: 0.2 }
+                    }
+                });
             }
         }
         
@@ -1225,6 +1353,7 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
         let expandedNodes = [];
         let expandedEdges = [];
         let originalEdgeId = null;
+        let savedCameraState = null;
 
         function collapseCommits() {
             if (expandedNodes.length > 0) nodes.remove(expandedNodes);
@@ -1236,6 +1365,16 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
             expandedEdges = [];
             expandedTagId = null;
             originalEdgeId = null;
+
+            if (savedCameraState) {
+                // Restore purely to the exact saved state
+                network.moveTo({
+                    position: savedCameraState.position,
+                    scale: savedCameraState.scale,
+                    animation: { duration: 350, easingFunction: 'easeInOutQuad' }
+                });
+                savedCameraState = null;
+            }
         }
 
         network.on("click", (params) => {
@@ -1266,9 +1405,15 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
                 if (expandedTagId === tagSha) {
                     collapseCommits();
                 } else {
+                    // Si habia otro nodo abierto, guardar su estado viejo es redundante 
+                    // porque ya regresaremos a la base, pero queremos tomar snapshot de DONDE esta AHORA
+                    // antes de abrir el nuevo nodo si el grafo estaba colapsado.
+                    let currentCam = { position: network.getViewPosition(), scale: network.getScale() };
+                    
                     collapseCommits();
                     
                     if (node && node.stats && node.stats.commits_list && node.stats.commits_list.length > 0) {
+                        savedCameraState = currentCam;
                         expandedTagId = tagSha;
                         
                         // Buscar el edge original desde el padre
@@ -1295,6 +1440,20 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
                         const newNodes = [];
                         const newEdges = [];
                         
+                        const parentPos = network.getPositions([tagSha])[tagSha] || {x: 0, y: 0};
+                        const commitHashes = new Set(commits.map(c => c.hash));
+                        let groupHasBranches = commits.some(c => c.parents && c.parents.length > 1);
+                        
+                        // Adaptive layout: check if graph is structurally branching
+                        let isGraphCurrentlyBranched = hasBranchesGlobal || groupHasBranches;
+                        let adaptLevelSep = isGraphCurrentlyBranched ? 140 : 200;
+                        let adaptNodeSpac = isGraphCurrentlyBranched ? 90  : 160;
+                        
+                        network.setOptions({
+                            layout: { hierarchical: { levelSeparation: adaptLevelSep, nodeSpacing: adaptNodeSpac } },
+                            physics: { hierarchicalRepulsion: { nodeDistance: adaptLevelSep, springLength: adaptLevelSep } }
+                        });
+                        
                         for (let i = 0; i < commits.length; i++) {
                             const c = commits[i];
                             const cId = "exp_" + c.hash;
@@ -1311,6 +1470,20 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
                             
                             const titleTxt = `Hash: ${c.hash}\\nAutor: ${c.autor}\\nFecha: ${c.fecha}\\n\\n${c.mensaje_full || c.mensaje}`;
                             
+                            const pos = savedPositions[cId];
+                            
+                            // Initialize new nodes safely beneath the parent
+                            // Calculate simple topological level based on index to spread them downward nicely
+                            const topoLevel = i + 1;
+                            const hSpacing = 160; 
+                            const vSpacing = 90;
+                            
+                            // Alternate horizontal placement slightly to aid physics unraveling of branches
+                            const xOffset = (i % 3 === 0) ? 0 : (i % 2 === 0 ? hSpacing : -hSpacing);
+                            
+                            let initialX = pos ? pos.x : (parentPos.x + xOffset);
+                            let initialY = pos ? pos.y : (parentPos.y + (topoLevel * vSpacing));
+                            
                             newNodes.push({
                                 id: cId,
                                 is_expanded_commit: true,
@@ -1318,40 +1491,71 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
                                 label: labelTxt,
                                 title: titleTxt,
                                 shape: 'box',
-                                color: { background: '#2a2a2a', border: '#555555', highlight: { background: '#444444', border: '#ffffff'} },
-                                font: { color: '#cccccc', size: 10, face: 'Inter', align: 'left' }
+                                color: { background: currentTheme === 'dark' ? '#2a2a2a' : '#dfdbd4', border: currentTheme === 'dark' ? '#555555' : '#b1b6bd' },
+                                font: { color: THEMES_CONFIG[currentTheme].font, size: 10, face: 'Inter', align: 'left' },
+                                x: initialX,
+                                y: initialY
                             });
                             
-                            if (i === 0) {
-                                if (isAttachedToParent) {
-                                    newEdges.push({
-                                        id: `exp_edge_start`,
-                                        from: startSha,
-                                        to: cId,
-                                        arrows: "to",
-                                        color: { color: '#aaaaaa' }
-                                    });
-                                }
+                            let parents = c.parents || [];
+                            if (parents.length === 0 && i === 0 && isAttachedToParent) {
+                                newEdges.push({ id: `exp_edge_start_${c.hash}`, from: startSha, to: cId, arrows: "to", color: { color: THEMES_CONFIG[currentTheme].edgeHi } });
                             } else {
-                                newEdges.push({
-                                    id: `exp_edge_${i}`,
-                                    from: "exp_" + commits[i-1].hash,
-                                    to: cId,
-                                    arrows: "to",
-                                    color: { color: '#555555' }
-                                });
+                                let linkedToStart = false;
+                                for (let p of parents) {
+                                    if (commitHashes.has(p)) {
+                                        newEdges.push({
+                                            id: `exp_edge_${p}_${c.hash}`,
+                                            from: "exp_" + p,
+                                            to: cId,
+                                            arrows: "to",
+                                            color: { color: THEMES_CONFIG[currentTheme].edgeHi }, width: 1.5
+                                        });
+                                    } else {
+                                        // Parent not in expanded group, link from startSha tag if appropriate
+                                        if (isAttachedToParent && !linkedToStart) {
+                                            newEdges.push({ id: `exp_edge_start_${p}_${c.hash}`, from: startSha, to: cId, arrows: "to", color: { color: THEMES_CONFIG[currentTheme].edgeHi } });
+                                            linkedToStart = true;
+                                        }
+                                    }
+                                }
                             }
                         }
                         
-                        if (commits.length > 0) {
-                            newEdges.push({
-                                id: `exp_edge_end`,
-                                from: "exp_" + commits[commits.length-1].hash,
-                                to: tagSha,
-                                arrows: "to",
-                                color: { color: '#aaaaaa' },
-                                dashes: [2, 2]
-                            });
+                        // Childless commits in the group (leaves) re-connect to the parent Tag
+                        const childCounts = {};
+                        for (let c of commits) childCounts[c.hash] = 0;
+                        for (let c of commits) {
+                            for (let p of (c.parents || [])) {
+                                if (childCounts[p] !== undefined) childCounts[p]++;
+                            }
+                        }
+                        
+                        let hasLeafLinkedToTag = false;
+                        for (let c of commits) {
+                            if (childCounts[c.hash] === 0) {
+                                newEdges.push({
+                                    id: `exp_edge_end_${c.hash}`,
+                                    from: "exp_" + c.hash,
+                                    to: tagSha,
+                                    arrows: "to",
+                                    color: { color: THEMES_CONFIG[currentTheme].edgeHi },
+                                    dashes: [2, 2]
+                                });
+                                hasLeafLinkedToTag = true;
+                            }
+                        }
+                        
+                        // Fallback just in case
+                        if (!hasLeafLinkedToTag && commits.length > 0) {
+                             newEdges.push({
+                                 id: `exp_edge_end_fallback`,
+                                 from: "exp_" + commits[commits.length-1].hash,
+                                 to: tagSha,
+                                 arrows: "to",
+                                 color: { color: THEMES_CONFIG[currentTheme].edgeHi },
+                                 dashes: [2, 2]
+                             });
                         }
                         
                         nodes.add(newNodes);
@@ -1359,6 +1563,25 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
                         
                         expandedNodes = newNodes.map(n => n.id);
                         expandedEdges = newEdges.map(e => e.id);
+                        
+                        // Temporarily turn on a very gentle, constrained physics simulation ONLY if nodes weren't saved
+                        // Allows the graph structure to naturally untangle itself without shooting across the screen
+                        const hasUnsavedPos = newNodes.some(n => !savedPositions[n.id]);
+                        if (hasUnsavedPos && !nodesLocked) {
+                            network.setOptions({
+                                physics: { 
+                                    enabled: true,
+                                    hierarchicalRepulsion: { nodeDistance: adaptLevelSep, centralGravity: 0.05, springLength: adaptLevelSep, springConstant: 0.03, damping: 0.3 }
+                                }
+                            });
+                            // Turn physics back off shortly to freeze them in the new clean layout
+                            setTimeout(() => {
+                                network.setOptions({ physics: { enabled: false } });
+                                const finalPos = network.getPositions(expandedNodes);
+                                Object.assign(savedPositions, finalPos);
+                                try { localStorage.setItem('gitsearch_positions', JSON.stringify(savedPositions)); } catch(e){}
+                            }, 1200);
+                        }
                     }
                 }
             } else {
@@ -1472,15 +1695,18 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
 
 
         function highlightNode(nodeId) {
-            // [VISUAL ONLY] Restaurar color monocromático al nodo anterior
+            const t = THEMES_CONFIG[currentTheme];
             if (lastHighlightedNode) {
                 const old = nodes.get(lastHighlightedNode);
                 if (old) {
-                    nodes.update({ id: lastHighlightedNode, color: { background: old.is_main ? '#e0e0e0' : '#666666', border: old.is_main ? '#ffffff' : '#999999' } });
+                    if (old.is_expanded_commit) {
+                        nodes.update({ id: lastHighlightedNode, color: { background: currentTheme === 'dark' ? '#2a2a2a' : '#dfdbd4', border: currentTheme === 'dark' ? '#555555' : '#b1b6bd' } });
+                    } else {
+                        nodes.update({ id: lastHighlightedNode, color: { background: old.is_main ? t.mainBg : t.sideBg, border: old.is_main ? t.mainBorder : t.sideBorder } });
+                    }
                 }
             }
-            // [VISUAL ONLY] Highlight en blanco puro para nodo seleccionado
-            nodes.update({ id: nodeId, color: { background: '#ffffff', border: '#ffffff' } });
+            nodes.update({ id: nodeId, color: { background: currentTheme === 'dark' ? '#ffffff' : '#000000', border: currentTheme === 'dark' ? '#ffffff' : '#000000' } });
             lastHighlightedNode = nodeId;
         }
 
@@ -1491,10 +1717,16 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
 
         function closePanel() {
             document.getElementById('side-panel').classList.remove('open');
-            // [VISUAL ONLY] Limpiar highlights al cerrar — restaurar paleta monocromática
             if (lastHighlightedNode) {
+                const t = THEMES_CONFIG[currentTheme];
                 const old = nodes.get(lastHighlightedNode);
-                if (old) nodes.update({ id: lastHighlightedNode, color: { background: old.is_main ? '#e0e0e0' : '#666666', border: old.is_main ? '#ffffff' : '#999999' } });
+                if (old) {
+                    if (old.is_expanded_commit) {
+                        nodes.update({ id: lastHighlightedNode, color: { background: currentTheme === 'dark' ? '#2a2a2a' : '#dfdbd4', border: currentTheme === 'dark' ? '#555555' : '#b1b6bd' } });
+                    } else {
+                        nodes.update({ id: lastHighlightedNode, color: { background: old.is_main ? t.mainBg : t.sideBg, border: old.is_main ? t.mainBorder : t.sideBorder } });
+                    }
+                }
                 lastHighlightedNode = null;
             }
         }

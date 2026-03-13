@@ -36,21 +36,17 @@ def generar_panel_busqueda(commits_data: list) -> str:
 
 <style>
   /*
-   * ── GitSearch Panel UI — Diseño Monocromático [VISUAL ONLY]
-   *    Paleta: negro / blanco / grises. Sin colores de acento fuertes.
-   *    Nota: todos los IDs y clases se mantienen idénticos para
-   *    compatibilidad con el JS existente.
+   * ── GitSearch Panel UI — Themed
    */
 
-  /* ── Botón flotante de apertura ── */
   #gs-toggle-btn {{
     position: absolute;
-    top: 60px; /* offset respecto a topbar principal */
+    top: 60px;
     right: 530px;
     z-index: 200;
-    background: rgba(14, 14, 14, 0.94);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    color: #d0d0d0;
+    background: var(--bg-raised);
+    border: 1px solid var(--border-normal);
+    color: var(--text-primary);
     border-radius: 8px;
     padding: 7px 14px;
     font-size: 0.78rem;
@@ -65,35 +61,33 @@ def generar_panel_busqueda(commits_data: list) -> str:
     letter-spacing: 0.01em;
   }}
   #gs-toggle-btn:hover {{
-    background: #1a1a1a;
-    border-color: rgba(255, 255, 255, 0.25);
-    color: #ffffff;
+    background: var(--bg-hover);
+    border-color: var(--border-strong);
+    color: var(--accent-active);
   }}
 
-  /* ── Panel principal ── */
   #gs-panel {{
     position: absolute;
-    top: 48px; /* offset topbar */
+    top: 48px;
     right: 0;
     width: 480px;
     height: calc(100% - 48px);
-    background: rgba(10, 10, 10, 0.98);
+    background: var(--panel-bg);
     backdrop-filter: blur(28px);
-    border-left: 1px solid rgba(255, 255, 255, 0.07);
-    box-shadow: -6px 0 30px rgba(0, 0, 0, 0.7);
+    border-left: 1px solid var(--panel-border);
+    box-shadow: var(--shadow-panel);
     z-index: 1100;
     display: flex;
     flex-direction: column;
     transform: translateX(100%);
     transition: transform 0.32s cubic-bezier(0.4, 0, 0.2, 1);
-    font-family: 'Inter', -apple-system, sans-serif;
+    font-family: 'Inter', sans-serif;
   }}
   #gs-panel.gs-open {{ transform: translateX(0); }}
 
-  /* ── Cabecera del panel ── */
   #gs-header {{
     padding: 16px 22px 14px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    border-bottom: 1px solid var(--border-subtle);
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -103,7 +97,7 @@ def generar_panel_busqueda(commits_data: list) -> str:
     margin: 0;
     font-size: 0.82rem;
     font-weight: 700;
-    color: #e0e0e0;
+    color: var(--text-primary);
     display: flex;
     align-items: center;
     gap: 8px;
@@ -113,7 +107,7 @@ def generar_panel_busqueda(commits_data: list) -> str:
   #gs-close {{
     background: none;
     border: none;
-    color: #555555;
+    color: var(--text-muted);
     font-size: 18px;
     cursor: pointer;
     line-height: 1;
@@ -121,12 +115,11 @@ def generar_panel_busqueda(commits_data: list) -> str:
     border-radius: 4px;
     transition: color 0.15s, background 0.15s;
   }}
-  #gs-close:hover {{ color: #e0e0e0; background: #1a1a1a; }}
+  #gs-close:hover {{ color: var(--text-primary); background: var(--bg-raised); }}
 
-  /* ── Formulario de búsqueda ── */
   #gs-form {{
     padding: 14px 22px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    border-bottom: 1px solid var(--border-subtle);
     flex-shrink: 0;
   }}
   .gs-row {{ display: flex; gap: 8px; margin-bottom: 10px; }}
@@ -134,9 +127,9 @@ def generar_panel_busqueda(commits_data: list) -> str:
 
   .gs-input {{
     flex: 1;
-    background: #111111;
-    border: 1px solid rgba(255, 255, 255, 0.10);
-    color: #e0e0e0;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-normal);
+    color: var(--text-primary);
     padding: 8px 12px;
     border-radius: 5px;
     font-size: 0.80rem;
@@ -144,105 +137,98 @@ def generar_panel_busqueda(commits_data: list) -> str:
     font-family: 'Inter', sans-serif;
     transition: border-color 0.15s;
   }}
-  .gs-input:focus {{ border-color: rgba(255, 255, 255, 0.25); }}
-  .gs-input::placeholder {{ color: #444444; }}
+  .gs-input:focus {{ border-color: var(--border-strong); }}
+  .gs-input::placeholder {{ color: var(--text-muted); }}
 
   .gs-btn-search {{
-    background: #1a1a1a;
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    color: #e0e0e0;
+    background: var(--bg-raised);
+    border: 1px solid var(--border-normal);
+    color: var(--text-primary);
     padding: 8px 16px;
     border-radius: 5px;
     font-size: 0.78rem;
     font-weight: 600;
     cursor: pointer;
     white-space: nowrap;
-    font-family: 'Inter', sans-serif;
     transition: background 0.15s, border-color 0.15s;
   }}
   .gs-btn-search:hover {{
-    background: #242424;
-    border-color: rgba(255, 255, 255, 0.26);
+    background: var(--bg-hover);
+    border-color: var(--border-strong);
   }}
 
   .gs-btn-clear {{
     background: transparent;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    color: #555555;
+    border: 1px solid var(--border-subtle);
+    color: var(--text-muted);
     padding: 8px 10px;
     border-radius: 5px;
     font-size: 0.80rem;
     cursor: pointer;
     transition: color 0.15s, border-color 0.15s;
   }}
-  .gs-btn-clear:hover {{ color: #aaaaaa; border-color: rgba(255, 255, 255, 0.18); }}
+  .gs-btn-clear:hover {{ color: var(--text-primary); border-color: var(--border-normal); }}
 
-  /* ── Selección de modo ── */
   .gs-modes {{ display: flex; gap: 4px; flex-wrap: wrap; }}
   .gs-mode-btn {{
     background: transparent;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    color: #555555;
+    border: 1px solid var(--border-subtle);
+    color: var(--text-muted);
     padding: 4px 10px;
     border-radius: 20px;
     font-size: 0.70rem;
     font-weight: 600;
     cursor: pointer;
     transition: background 0.15s, border-color 0.15s, color 0.15s;
-    font-family: 'Inter', sans-serif;
   }}
   .gs-mode-btn.active, .gs-mode-btn:hover {{
-    background: #1a1a1a;
-    border-color: rgba(255, 255, 255, 0.20);
-    color: #cccccc;
+    background: var(--bg-raised);
+    border-color: var(--border-strong);
+    color: var(--text-primary);
   }}
 
-  /* ── Área de resultados ── */
   #gs-results-wrap {{
     flex: 1;
     overflow-y: auto;
     padding: 14px 22px;
     scrollbar-width: thin;
-    scrollbar-color: #2a2a2a transparent;
+    scrollbar-color: var(--bg-raised) transparent;
   }}
   #gs-results-wrap::-webkit-scrollbar {{ width: 4px; }}
   #gs-results-wrap::-webkit-scrollbar-track {{ background: transparent; }}
-  #gs-results-wrap::-webkit-scrollbar-thumb {{ background: #2a2a2a; border-radius: 2px; }}
+  #gs-results-wrap::-webkit-scrollbar-thumb {{ background: var(--bg-raised); border-radius: 2px; }}
 
-  /* ── Status bar ── */
   #gs-status {{
     font-size: 0.70rem;
-    color: #555555;
+    color: var(--text-muted);
     margin-bottom: 12px;
     min-height: 16px;
     text-transform: uppercase;
     letter-spacing: 0.04em;
   }}
 
-  /* ── Tarjetas de resultado ── */
   .gs-result-item {{
     padding: 11px 13px;
     border-radius: 6px;
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--border-subtle);
     margin-bottom: 6px;
     cursor: pointer;
     transition: border-color 0.15s, background 0.15s;
     background: transparent;
   }}
   .gs-result-item:hover {{
-    border-color: rgba(255, 255, 255, 0.16);
-    background: #111111;
+    border-color: var(--border-normal);
+    background: var(--bg-surface);
   }}
   .gs-result-item.gs-active {{
-    border-color: rgba(255, 255, 255, 0.22);
-    background: #111111;
+    border-color: var(--border-strong);
+    background: var(--bg-surface);
   }}
 
-  /* ── Hash en resultado ── */
   .gs-result-hash {{
-    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-family: 'JetBrains Mono', monospace;
     font-size: 0.72rem;
-    color: #aaaaaa;
+    color: var(--text-secondary);
     font-weight: 500;
     display: flex;
     align-items: center;
@@ -250,11 +236,10 @@ def generar_panel_busqueda(commits_data: list) -> str:
     flex-wrap: wrap;
   }}
 
-  /* ── Badge de modo ── */
   .gs-badge {{
-    background: #1a1a1a;
-    border: 1px solid rgba(255, 255, 255, 0.10);
-    color: #777777;
+    background: var(--bg-raised);
+    border: 1px solid var(--border-normal);
+    color: var(--text-secondary);
     font-size: 0.60rem;
     padding: 1px 6px;
     border-radius: 3px;
@@ -264,10 +249,9 @@ def generar_panel_busqueda(commits_data: list) -> str:
     letter-spacing: 0.04em;
   }}
 
-  /* ── Mensaje del commit ── */
   .gs-result-msg {{
     font-size: 0.80rem;
-    color: #e0e0e0;
+    color: var(--text-primary);
     margin: 5px 0 3px;
     font-weight: 500;
     white-space: nowrap;
@@ -275,22 +259,16 @@ def generar_panel_busqueda(commits_data: list) -> str:
     text-overflow: ellipsis;
   }}
 
-  /* ── Metadata (autor / fecha) ── */
-  .gs-result-meta {{
+  .gs-result-meta, .gs-result-files {{
     font-size: 0.68rem;
-    color: #555555;
+    color: var(--text-muted);
     margin-bottom: 5px;
   }}
 
-  /* ── Archivos afectados ── */
   .gs-result-files {{
-    font-size: 0.65rem;
-    color: #555555;
-    margin-bottom: 5px;
     font-family: 'JetBrains Mono', monospace;
   }}
 
-  /* ── Links de padres ── */
   .gs-parent-row {{
     display: flex;
     align-items: center;
@@ -300,48 +278,34 @@ def generar_panel_busqueda(commits_data: list) -> str:
   }}
   .gs-parent-label {{
     font-size: 0.65rem;
-    color: #444444;
+    color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 0.04em;
   }}
-  .gs-parent-link {{
+  .gs-parent-link, .gs-node-link {{
     font-family: 'JetBrains Mono', monospace;
     font-size: 0.68rem;
-    color: #888888;
-    background: #111111;
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: var(--text-secondary);
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
     border-radius: 3px;
     padding: 1px 7px;
     cursor: pointer;
     text-decoration: none;
     transition: color 0.15s, border-color 0.15s;
   }}
-  .gs-parent-link:hover {{
-    color: #cccccc;
-    border-color: rgba(255, 255, 255, 0.20);
+  .gs-parent-link:hover, .gs-node-link:hover {{
+    color: var(--text-primary);
+    border-color: var(--border-normal);
   }}
-
-  /* ── Link "ver nodo ↗" ── */
   .gs-node-link {{
-    font-size: 0.65rem;
-    color: #666666;
-    background: #111111;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 3px;
-    padding: 1px 7px;
-    cursor: pointer;
     margin-left: auto;
-    transition: color 0.15s, border-color 0.15s;
     font-family: 'Inter', sans-serif;
-  }}
-  .gs-node-link:hover {{
-    color: #cccccc;
-    border-color: rgba(255, 255, 255, 0.20);
+    font-size: 0.65rem;
   }}
 
-  /* ── Sin resultados ── */
   .gs-no-results {{
-    color: #444444;
+    color: var(--text-muted);
     font-size: 0.78rem;
     text-align: center;
     padding: 32px 0;
@@ -593,7 +557,7 @@ function gsResaltarNodosDeResultados(resultados) {{
     try {{
       const n = nodes.get(sha);
       if (n) {{
-        nodes.update({{ id: sha, color: {{ background: '#6e40c9', border: '#a371f7' }} }});
+        nodes.update({{ id: sha, color: {{ background: '#8660dd', border: '#a371f7' }} }});
       }}
     }} catch(e) {{}}
   }});
@@ -601,12 +565,16 @@ function gsResaltarNodosDeResultados(resultados) {{
 
 // ── Limpiar highlights del grafo ──────────────────────
 function gsLimpiarHighlights() {{
-  if (typeof network === 'undefined' || typeof nodes === 'undefined' || typeof nodesData === 'undefined') return;
-  nodesData.forEach(n => {{
-    try {{
-      nodes.update({{ id: n.id, color: {{ background: n.is_main ? '#1f6feb' : '#1a7f37', border: '#ffffff' }} }});
-    }} catch(e) {{}}
-  }});
+  if (typeof updateNetworkColors === 'function') {{
+      updateNetworkColors();
+  }} else {{
+      if (typeof network === 'undefined' || typeof nodes === 'undefined' || typeof nodesData === 'undefined') return;
+      nodesData.forEach(n => {{
+        try {{
+          nodes.update({{ id: n.id, color: {{ background: n.is_main ? '#e0e0e0' : '#666666', border: n.is_main ? '#ffffff' : '#999999' }} }});
+        }} catch(e) {{}}
+      }});
+  }}
 }}
 
 // ── Obtener el SHA del nodo del grafo que contiene el commit ──

@@ -1232,7 +1232,13 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
             return {
                 ...e, color: { color: t.edge, highlight: t.edgeHi },
                 dashes: e.is_parallel ? [4, 4] : false, width: getEdgeWidth(e.n_commits || 0),
-                font: { align: 'middle', size: 10, color: 'var(--text-muted)' }
+                font: { 
+                    align: 'horizontal', 
+                    size: 10, 
+                    color: currentTheme === 'dark' ? '#a0a4ab' : '#666666', 
+                    strokeWidth: 3, 
+                    strokeColor: currentTheme === 'dark' ? '#181a1f' : '#f4f2ee' 
+                }
             };
         }));
 
@@ -1275,7 +1281,14 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
                 }
             });
             edges.forEach(e => {
-                edges.update({id: e.id, color: { color: t.edge, highlight: t.edgeHi }});
+                edges.update({
+                    id: e.id, 
+                    color: { color: t.edge, highlight: t.edgeHi },
+                    font: { 
+                        color: currentTheme === 'dark' ? '#a0a4ab' : '#666666', 
+                        strokeColor: currentTheme === 'dark' ? '#181a1f' : '#f4f2ee' 
+                    }
+                });
             });
             if (lastHighlightedNode) highlightNode(lastHighlightedNode);
         }

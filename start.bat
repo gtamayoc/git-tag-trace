@@ -92,12 +92,12 @@ echo.
 
 if defined OUTPUT_FILE (
     if not "%OUTPUT_FILE%"=="" (
-        python main.py "%REPO_PATH%" --output "%OUTPUT_FILE%"
+        python -m gitsearch "%REPO_PATH%" --output "%OUTPUT_FILE%"
     ) else (
-        python main.py "%REPO_PATH%"
+        python -m gitsearch "%REPO_PATH%"
     )
 ) else (
-    python main.py "%REPO_PATH%"
+    python -m gitsearch "%REPO_PATH%"
 )
 
 echo.

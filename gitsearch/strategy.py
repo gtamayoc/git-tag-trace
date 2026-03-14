@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 strategy.py — Selección inteligente del comando Git según los parámetros.
 
@@ -49,7 +48,6 @@ def seleccionar_estrategia(params: dict) -> dict:
             modo = "l"          # Trazabilidad de función/rango
         elif modo == "auto" and texto:
             # Heurística: si el texto parece un patrón regex, usar -G; si no, -S
-            import re as _re
             REGEX_INDICADORES = (r".*", r".+", r"\d", r"\w", r"[", r"(", r"^", r"|")
             es_regex = any(ind in texto for ind in REGEX_INDICADORES)
             modo = "g" if es_regex else "grep"

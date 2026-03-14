@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Analizador Técnico Offline de Repositorio Git
 Uso: python main.py <ruta_repositorio> [--output archivo.md]
 """
 
-import sys
-import os
 import argparse
 import json
-from datetime import datetime
+import os
+import sys
 from collections import Counter
+from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Any, Callable
 
 try:
     from dotenv import load_dotenv
@@ -21,7 +20,7 @@ except ImportError:
     pass
 
 try:
-    from git import Repo, InvalidGitRepositoryError, NoSuchPathError
+    from git import Commit, InvalidGitRepositoryError, NoSuchPathError, Repo
 except ImportError:
     print("[ERROR] GitPython no está instalado. Ejecuta start.bat para configurar el entorno.")
     sys.exit(1)
@@ -32,7 +31,7 @@ try:
     _GITSEARCH_OK = True
 except ImportError:
     _GITSEARCH_OK = False
-    _gs_generar_panel = None
+    _gs_generar_panel = None  # type: ignore[assignment]
 
 
 # ──────────────────────────────────────────────
@@ -73,20 +72,20 @@ def obtener_historial(repo: Repo) -> dict:
 
     print(f"[INFO] Procesando metadatos para {len(commits)} commits...")
     lista = []
-    
+
     git_show = repo.git.show
     from_timestamp = datetime.fromtimestamp
     strftime_fmt = "%Y-%m-%d %H:%M"
-    
+
     for i, c in enumerate(commits):
         msg_lines = c.message.strip().splitlines()
         first_line = msg_lines[0][:80] if msg_lines else "Sin mensaje"
-        
+
         commit_hexsha = c.hexsha
         autor_name = c.author.name
         committed_date = c.committed_date
         parents_hashes = [p.hexsha for p in c.parents]
-        
+
         diff_preview = ""
         try:
             diff_preview = git_show(commit_hexsha, "-p", "--stat", "--no-color", "--format=", max_count=1)
@@ -164,7 +163,7 @@ def obtener_tags(repo: Repo) -> list:
 # SECCIÓN 3 — ANÁLISIS TOPOLÓGICO DEL GRAFO GIT
 # ──────────────────────────────────────────────
 
-def comparar_tags(repo: Repo, tags: list) -> Optional[dict]:
+def comparar_tags(repo: Repo, tags: list) -> dict | None:
     """Compara los dos últimos tags (topológicamente) y retorna diferencias."""
     if len(tags) < 2:
         return None
@@ -264,7 +263,7 @@ def construir_mapa_commits(repo: Repo) -> dict:
 
 # ── 3b. Identificar ramas que contienen cada tag ─────────────────────────────
 
-def identificar_ramas_de_tag(repo: Repo, commit_sha: str, sha_a_ramas: dict = None) -> list:
+def identificar_ramas_de_tag(repo: Repo, commit_sha: str, sha_a_ramas: dict | None = None) -> list:
     """
     Devuelve lista de nombres de ramas en las que el commit del tag está presente.
     Si se pasa sha_a_ramas (un dict pre-calculado sha→[ramas]), se usa ese;
@@ -329,8 +328,8 @@ def _construir_sha_a_ramas(repo: Repo) -> dict:
 
 def calcular_commits_exclusivos_tag(
     repo: Repo,
-    commit_tag: object,
-    commit_padre_tag: object,
+    commit_tag: Commit,
+    commit_padre_tag: Commit,
 ) -> dict:
     """
     Calcula los commits que están en commit_tag pero NO en commit_padre_tag,
@@ -339,7 +338,7 @@ def calcular_commits_exclusivos_tag(
     """
     from_timestamp = datetime.fromtimestamp
     strftime_fmt = "%Y-%m-%d %H:%M"
-    
+
     try:
         bases = repo.merge_base(commit_padre_tag, commit_tag)
         base  = bases[0] if bases else commit_padre_tag
@@ -351,7 +350,7 @@ def calcular_commits_exclusivos_tag(
         commits_data = []
         autores_set = set()
         archivos_set = set()
-        
+
         for c in commits:
             autores_set.add(c.author.name)
             message = c.message
@@ -417,8 +416,8 @@ def analizar_topologia_tags(repo: Repo, tags: list) -> dict:
         return {}
 
     print("[INFO] Resolviendo commits de tags...")
-    sha_a_tags_list = {}
-    tag_to_obj = {}
+    sha_a_tags_list: dict[str, list[str]] = {}
+    tag_to_obj: dict[str, Any] = {}
 
     for t in tags:
         sha = t.get("hash_completo", "N/A")
@@ -510,7 +509,7 @@ def analizar_topologia_tags(repo: Repo, tags: list) -> dict:
             candidatos = list(tags_heredados)
             padres_directos = []
             num_candidatos = len(candidatos)
-            
+
             if num_candidatos == 1:
                 padres_directos = candidatos
             elif num_candidatos > 1:
@@ -546,7 +545,7 @@ def analizar_topologia_tags(repo: Repo, tags: list) -> dict:
 
 
 
-def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial: dict = None, busqueda: dict = None) -> str:
+def generar_grafo_html(repo: Repo, tags: list, topologia: dict | None = None, historial: dict | None = None, busqueda: dict | None = None) -> str:
     """Genera un archivo HTML con un grafo interactivo de los tags y un explorador de commits."""
     if not tags:
         return "<html><body style='font-family:sans-serif; padding:50px;'><h1>No se encontraron tags</h1><p>El repositorio requiere al menos un tag para generar el grafo.</p></body></html>"
@@ -555,7 +554,7 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
     edges = []
 
     # Agrupar tags por SHA
-    tags_by_sha = {}
+    tags_by_sha: dict[str, list[dict[str, Any]]] = {}
     for t in tags:
         sha = t.get("hash_completo", "N/A")
         if sha == "N/A": continue
@@ -587,7 +586,7 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
     for i, sha in enumerate(shas_ordenados):
         tags_en_sha = tags_by_sha[sha]
         rep_tag = tags_en_sha[0]
-        
+
         topo_info = topologia.get(sha, {}) if topologia else {}
         ramas     = topo_info.get("ramas", [])
         stats     = topo_info.get("stats", {})
@@ -629,7 +628,7 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
                 edge_label = ""
                 if n_exc > 0:
                      edge_label = f"{n_exc} cmts" + (f" • {n_arch} files" if n_arch else "")
-                     
+
                 edges.append({
                     "id": f"{padre_sha}_{sha}",
                     "from": padre_sha, "to": sha, "arrows": "to",
@@ -2016,9 +2015,9 @@ def ejecutar_busqueda(repo: Repo, criterio: str, topologia: dict) -> dict:
     """
     import re
     print(f"[INFO] Ejecutando búsqueda profunda para: '{criterio}'...")
-    
+
     shas_encontrados = {}  # sha -> tipo_match
-    
+
     # 1. ¿Es un hash de commit?
     es_posible_hash = re.match(r'^[0-9a-fA-F]{4,40}$', criterio.strip())
     if es_posible_hash:
@@ -2055,7 +2054,7 @@ def ejecutar_busqueda(repo: Repo, criterio: str, topologia: dict) -> dict:
         pass
 
     resultados = []
-    
+
     # Mapeo rápido de commits a tags usando la topología pre-calculada
     commit_to_tags = {}
     for tag_sha, info in topologia.items():
@@ -2069,7 +2068,7 @@ def ejecutar_busqueda(repo: Repo, criterio: str, topologia: dict) -> dict:
         try:
             c = repo.commit(sha)
             hash_corto = c.hexsha[:7]
-            
+
             tags_del_commit = commit_to_tags.get(hash_corto) or commit_to_tags.get(c.hexsha)
             if not tags_del_commit:
                 try:
@@ -2077,7 +2076,7 @@ def ejecutar_busqueda(repo: Repo, criterio: str, topologia: dict) -> dict:
                     tags_del_commit = [t.strip() for t in out_tags if t.strip()]
                 except Exception:
                     tags_del_commit = []
-            
+
             archivos = []
             try:
                 if c.parents:
@@ -2089,7 +2088,7 @@ def ejecutar_busqueda(repo: Repo, criterio: str, topologia: dict) -> dict:
                         pass
             except Exception:
                 pass
-            
+
             resultados.append({
                 "hash": hash_corto,
                 "full_hash": c.hexsha,
@@ -2102,9 +2101,9 @@ def ejecutar_busqueda(repo: Repo, criterio: str, topologia: dict) -> dict:
             })
         except Exception:
             continue
-            
+
     resultados.sort(key=lambda x: x["fecha"], reverse=True)
-    
+
     print(f"[INFO] Búsqueda finalizada. {len(resultados)} coincidencias encontradas.")
     return {
         "criterio": criterio,
@@ -2117,7 +2116,7 @@ def ejecutar_busqueda(repo: Repo, criterio: str, topologia: dict) -> dict:
 # SECCIÓN 4 — GENERACIÓN DEL REPORTE
 # ──────────────────────────────────────────────
 
-def generar_reporte(repo_path: str, historial: dict, tags: list, comparacion: Optional[dict], busqueda: dict = None) -> str:
+def generar_reporte(repo_path: str, historial: dict, tags: list, comparacion: dict | None, busqueda: dict | None = None) -> str:
     lineas = []
 
     def separador(titulo: str):
@@ -2219,6 +2218,7 @@ def generar_reporte(repo_path: str, historial: dict, tags: list, comparacion: Op
 # ──────────────────────────────────────────────
 
 def main():
+    """Función principal del analizador de repositorios Git."""
     parser = argparse.ArgumentParser(
         description="Analizador técnico offline de repositorio Git local."
     )
@@ -2267,22 +2267,22 @@ def main():
     base_results_dir = Path(__file__).parent / "results"
     project_name = repo_path.name
     project_dir = base_results_dir / project_name
-    
+
     project_dir.mkdir(parents=True, exist_ok=True)
-    
+
     analisis_count = 1
     while (project_dir / f"analisis_{analisis_count}").exists():
         analisis_count += 1
-        
+
     analysis_dir = project_dir / f"analisis_{analisis_count}"
     analysis_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Determinar nombre del archivo de reporte
     if args.output:
         output_filename = Path(args.output).name
     else:
         output_filename = "reporte.txt"
-        
+
     output_path = analysis_dir / output_filename
     grafo_path = analysis_dir / "reporte_grafo.html"
 

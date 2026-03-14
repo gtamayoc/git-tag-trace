@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 html_builder.py — Generador del panel de búsqueda avanzada para el HTML.
 

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 engine.py — Motor de consultas Git (solo lectura).
 
@@ -10,11 +9,13 @@ Nunca escribe en el repositorio. Nunca envía datos al remoto.
 """
 
 from datetime import datetime
-from .filters import validar_y_normalizar, FiltroInvalido
+from typing import Any
+
+from .filters import FiltroInvalido, validar_y_normalizar
 from .strategy import seleccionar_estrategia
 
 
-def buscar(repo, params: dict, topologia: dict = None) -> dict:
+def buscar(repo, params: dict, topologia: dict[str, Any] | None = None) -> dict:
     """
     Busca commits en el repositorio según los parámetros dados.
 
@@ -89,32 +90,32 @@ def buscar(repo, params: dict, topologia: dict = None) -> dict:
     commit_to_tags = {}   # hash_corto → [tags]
     commit_to_sha  = {}   # hash_corto → sha_nodo_del_grafo
     if topologia:
-        for tag_sha, info in topologia.items():
+        for tag_sha_key, info in topologia.items():
             nombres = info.get("all_tags", [])
             if nombres:
-                tag_sha_short = tag_sha[:7]
+                tag_sha_short = tag_sha_key[:7]
                 commit_to_tags[tag_sha_short] = nombres
-                commit_to_sha[tag_sha_short] = tag_sha
+                commit_to_sha[tag_sha_short] = tag_sha_key
                 commits_list = info.get("stats", {}).get("commits_list", [])
                 for c_meta in commits_list:
                     c_hash = c_meta["hash"]
                     commit_to_tags[c_hash] = nombres
-                    commit_to_sha[c_hash] = tag_sha
+                    commit_to_sha[c_hash] = tag_sha_key
 
-    commit_cache = {}
+    commit_cache: dict[str, Any] = {}
 
     from_timestamp = datetime.fromtimestamp
     strftime_fmt = "%Y-%m-%d %H:%M"
-    
+
     resultados = []
-    
+
     for sha, tipo in shas_encontrados.items():
         try:
             c = commit_cache.get(sha)
             if c is None:
                 c = repo.commit(sha)
                 commit_cache[sha] = c
-            
+
             hash_corto = c.hexsha[:7]
             hexsha = c.hexsha
             autor = c.author.name
@@ -122,8 +123,8 @@ def buscar(repo, params: dict, topologia: dict = None) -> dict:
             message = c.message
 
             tags_del_commit = commit_to_tags.get(hash_corto) or []
-            tag_sha = commit_to_sha.get(hash_corto)
-            
+            tag_sha: str | None = commit_to_sha.get(hash_corto)
+
             if not tags_del_commit:
                 cached_tags = commit_to_tags.get(hexsha)
                 if cached_tags:

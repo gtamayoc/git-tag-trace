@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 filters.py — Validación y normalización de parámetros de búsqueda.
 Responsabilidad: garantizar que sólo parámetros válidos llegan al motor.
@@ -6,7 +5,6 @@ Responsabilidad: garantizar que sólo parámetros válidos llegan al motor.
 
 import re
 from datetime import datetime
-
 
 # Modos de búsqueda soportados
 MODOS_VALIDOS = {"s", "g", "grep", "l"}
@@ -80,7 +78,7 @@ def validar_y_normalizar(params: dict) -> dict:
             max_count = 2000
     except (ValueError, TypeError):
         max_count = 2000
-    out["max_count"] = max_count
+    out["max_count"] = max_count  # type: ignore[assignment]
 
     # --- regex: si modo 'g' o 's', validar que el patrón compile ---
     if modo in ("g",) and texto:

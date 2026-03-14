@@ -1151,7 +1151,7 @@ def generar_grafo_html(repo: Repo, tags: list[dict[str, Any]], topologia: dict[s
         <button class="btn-round" onclick="network.moveTo({scale: network.getScale()*1.5, animation:true})">+</button>
         <button class="btn-round" onclick="network.moveTo({scale: network.getScale()/1.5, animation:true})">-</button>
         <button class="btn-round" onclick="network.fit({animation:true})">⛶</button>
-        <button class="btn-round" id="btn-lock" onclick="toggleNodeLock()" title="Alternar Modo de Layout" style="font-size: 0.75rem; width: auto; padding: 0 10px; font-weight: 500;">🧊 Fijo</button>
+
         <button class="btn-round" onclick="toggleTheme()" title="Cambiar Tema (Claro / Oscuro)">🌓</button>
     </div>
 
@@ -1192,14 +1192,17 @@ def generar_grafo_html(repo: Repo, tags: list[dict[str, Any]], topologia: dict[s
         const globalSearchData = __GLOBAL_SEARCH__;
 
         let currentTab = 'info';
-        let selectedNode = null;   // Nodo del grafo seleccionado
-        let selectedCommit = null; // Commit específico visualizado
+        let selectedNode = null;
+        let selectedCommit = null;
         let lastHighlightedNode = null;
 
         const container = document.getElementById('mynetwork');
         let savedPositions = {};
         try { savedPositions = JSON.parse(localStorage.getItem('gitsearch_positions')) || {}; } catch(e){}
-        let nodesLocked = localStorage.getItem('gitsearch_locked') === 'true';
+        
+        function savePositions() {
+            try { localStorage.setItem('gitsearch_positions', JSON.stringify(savedPositions)); } catch(e){}
+        }
 
         const THEMES_CONFIG = {
             dark: { mainBg: '#e4e6eb', mainBorder: '#ffffff', sideBg: '#60646b', sideBorder: '#9aa0a6', edge: '#4a4d54', edgeHi: '#888d96', font: '#e4e6eb' },
@@ -1267,20 +1270,20 @@ def generar_grafo_html(repo: Repo, tags: list[dict[str, Any]], topologia: dict[s
                     roundness: 0.5
                 }
             },
-            layout: { hierarchical: { enabled: true, direction: 'UD', sortMethod: 'directed', levelSeparation: baseLevelSep, nodeSpacing: baseNodeSpac } },
+            layout: { 
+                hierarchical: { 
+                    enabled: true, 
+                    direction: 'UD', 
+                    sortMethod: 'directed', 
+                    levelSeparation: baseLevelSep, 
+                    nodeSpacing: baseNodeSpac,
+                    shakeStability: 'position',
+                    treeSpacing: baseNodeSpac
+                } 
+            },
             interaction: { hover: true, dragNodes: true, zoomView: true, dragView: true, selectConnectedEdges: false },
             physics: { 
-                enabled: true, // Smooth initial loading
-                stabilization: { enabled: true, iterations: 60, updateInterval: 10, fit: true },
-                hierarchicalRepulsion: { nodeDistance: baseLevelSep, centralGravity: 0.05, springLength: baseLevelSep, springConstant: 0.05, damping: 0.3 },
-                solver: 'hierarchicalRepulsion'
-            }
-        });
-
-        // Event for smooth settling visually
-        network.once("stabilizationIterationsDone", function () {
-            if (nodesLocked) {
-                network.setOptions({ physics: { enabled: false } }); // Lock into place
+                enabled: false
             }
         });
 
@@ -1312,44 +1315,13 @@ def generar_grafo_html(repo: Repo, tags: list[dict[str, Any]], topologia: dict[s
         network.on("dragStart", (p) => { if(p.nodes.length > 0) container.style.cursor = 'grabbing'; });
         network.on("dragEnd",   (params) => { 
             container.style.cursor = 'grab'; 
-            if (params.nodes.length > 0) {
+            if (params.nodes && params.nodes.length > 0) {
                 const pos = network.getPositions(params.nodes);
                 Object.assign(savedPositions, pos);
-                try { localStorage.setItem('gitsearch_positions', JSON.stringify(savedPositions)); } catch(e){}
+                savePositions();
             }
         });
 
-        function updateLockBtn() {
-            const btn = document.getElementById('btn-lock');
-            btn.textContent = nodesLocked ? '🧊 Modo Estricto' : '🌊 Modo Dinámico';
-            btn.title = nodesLocked ? "Modo Estricto: Nodos fijos sin físicas (más estable)" : "Modo Dinámico: Físicas suaves al mover ramas";
-        }
-        updateLockBtn();
-
-        function toggleNodeLock() {
-            nodesLocked = !nodesLocked;
-            localStorage.setItem('gitsearch_locked', nodesLocked);
-            updateLockBtn();
-            
-            if (nodesLocked) {
-                // Modo Fijo/Estricto: desactiva físicas para que no se reacomode violentamente
-                network.setOptions({ 
-                    layout: { hierarchical: { enabled: true, direction: 'UD', sortMethod: 'directed' } },
-                    physics: { enabled: false }
-                });
-            } else {
-                // Modo Dinámico: jerárquico + solver repulsion
-                network.setOptions({ 
-                    layout: { hierarchical: { enabled: false } },
-                    physics: { 
-                        enabled: true, 
-                        solver: 'repulsion', 
-                        repulsion: { nodeDistance: 130, springLength: 200, damping: 0.2 }
-                    }
-                });
-            }
-        }
-        
         // Exponer función para obtener posiciones actuales (útil para ajustes o guardado manual)
         window.getNodesPosition = () => {
             const pos = network.getPositions();
@@ -1371,7 +1343,13 @@ def generar_grafo_html(repo: Repo, tags: list[dict[str, Any]], topologia: dict[s
         let savedCameraState = null;
 
         function collapseCommits() {
-            if (expandedNodes.length > 0) nodes.remove(expandedNodes);
+            const pos = network.getPositions();
+            Object.assign(savedPositions, pos);
+            savePositions();
+            
+            if (expandedNodes.length > 0) {
+                nodes.remove(expandedNodes);
+            }
             if (expandedEdges.length > 0) edges.remove(expandedEdges);
             if (originalEdgeId) {
                 try { edges.update({id: originalEdgeId, hidden: false}); } catch(e) {}
@@ -1382,7 +1360,6 @@ def generar_grafo_html(repo: Repo, tags: list[dict[str, Any]], topologia: dict[s
             originalEdgeId = null;
 
             if (savedCameraState) {
-                // Restore purely to the exact saved state
                 network.moveTo({
                     position: savedCameraState.position,
                     scale: savedCameraState.scale,
@@ -1404,21 +1381,29 @@ def generar_grafo_html(repo: Repo, tags: list[dict[str, Any]], topologia: dict[s
                 }
                 
                 selectedNode = node;
-                // Por defecto cargamos el commit del tag
                 const commit = historyData.find(c => c.full_hash === tagSha || c.hash === node.hash);
                 if (commit) {
                     selectedCommit = commit;
                     openPanel();
                     highlightNode(tagSha);
                 }
+            } else {
+                closePanel();
+            }
+        });
 
-                // --------- EXPANDIR NODO ---------
+        network.on("doubleClick", (params) => {
+            if (params.nodes.length > 0) {
+                const tagSha = params.nodes[0];
+                const node = nodes.get(tagSha);
+                
+                if (node.is_expanded_commit) {
+                    return;
+                }
+
                 if (expandedTagId === tagSha) {
                     collapseCommits();
                 } else {
-                    // Si habia otro nodo abierto, guardar su estado viejo es redundante 
-                    // porque ya regresaremos a la base, pero queremos tomar snapshot de DONDE esta AHORA
-                    // antes de abrir el nuevo nodo si el grafo estaba colapsado.
                     let currentCam = { position: network.getViewPosition(), scale: network.getScale() };
                     
                     collapseCommits();
@@ -1447,7 +1432,7 @@ def generar_grafo_html(repo: Repo, tags: list[dict[str, Any]], topologia: dict[s
                             isAttachedToParent = true;
                         }
                         
-                        const commits = [...node.stats.commits_list].reverse(); // oldest to newest
+                        const commits = [...node.stats.commits_list].reverse();
                         const newNodes = [];
                         const newEdges = [];
                         
@@ -1455,14 +1440,13 @@ def generar_grafo_html(repo: Repo, tags: list[dict[str, Any]], topologia: dict[s
                         const commitHashes = new Set(commits.map(c => c.hash));
                         let groupHasBranches = commits.some(c => c.parents && c.parents.length > 1);
                         
-                        // Adaptive layout: increase spacing to prevent ALL overlapping
                         let isGraphCurrentlyBranched = hasBranchesGlobal || groupHasBranches;
                         let adaptLevelSep = isGraphCurrentlyBranched ? 180 : 260;
                         let adaptNodeSpac = isGraphCurrentlyBranched ? 140  : 220;
                         
                         network.setOptions({
-                            layout: { hierarchical: { levelSeparation: adaptLevelSep, nodeSpacing: adaptNodeSpac } },
-                            physics: { hierarchicalRepulsion: { nodeDistance: adaptLevelSep, springLength: adaptLevelSep } }
+                            layout: { hierarchical: { enabled: true, direction: 'UD', sortMethod: 'directed', levelSeparation: adaptLevelSep, nodeSpacing: adaptNodeSpac } },
+                            physics: { enabled: false }
                         });
                         
                         // Pre-calcular tamanos de nodos para spacing optimo
@@ -1614,24 +1598,18 @@ def generar_grafo_html(repo: Repo, tags: list[dict[str, Any]], topologia: dict[s
                         expandedNodes = newNodes.map(n => n.id);
                         expandedEdges = newEdges.map(e => e.id);
                         
-                        // Temporarily turn on a very gentle, constrained physics simulation ONLY if nodes weren't saved
-                        // Allows the graph structure to naturally untangle itself without shooting across the screen
-                        const hasUnsavedPos = newNodes.some(n => !savedPositions[n.id]);
-                        if (hasUnsavedPos && !nodesLocked) {
-                            network.setOptions({
-                                physics: { 
-                                    enabled: true,
-                                    hierarchicalRepulsion: { nodeDistance: adaptLevelSep, centralGravity: 0.05, springLength: adaptLevelSep, springConstant: 0.03, damping: 0.3 }
+                        setTimeout(() => {
+                            const updates = [];
+                            for (const nodeId of expandedNodes) {
+                                const saved = savedPositions[nodeId];
+                                if (saved && saved.x !== undefined && saved.y !== undefined) {
+                                    updates.push({ id: nodeId, x: saved.x, y: saved.y });
                                 }
-                            });
-                            // Turn physics back off shortly to freeze them in the new clean layout
-                            setTimeout(() => {
-                                network.setOptions({ physics: { enabled: false } });
-                                const finalPos = network.getPositions(expandedNodes);
-                                Object.assign(savedPositions, finalPos);
-                                try { localStorage.setItem('gitsearch_positions', JSON.stringify(savedPositions)); } catch(e){}
-                            }, 1200);
-                        }
+                            }
+                            if (updates.length > 0) {
+                                nodes.update(updates);
+                            }
+                        }, 50);
                     }
                 }
             } else {

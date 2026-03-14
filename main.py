@@ -9,9 +9,10 @@ import json
 import os
 import sys
 from collections import Counter
+from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 try:
     from dotenv import load_dotenv
@@ -38,7 +39,7 @@ except ImportError:
 # SECCIÓN 1 — HISTORIAL
 # ──────────────────────────────────────────────
 
-def obtener_historial(repo: Repo) -> dict:
+def obtener_historial(repo: Repo) -> dict[str, Any]:
     STASH_PREFIXES = (
         "On ",          # "On main: ..."
         "index on ",    # "index on main: ..."
@@ -46,14 +47,14 @@ def obtener_historial(repo: Repo) -> dict:
         "untracked files on ",
     )
 
-    def es_stash(commit) -> bool:
+    def es_stash(commit: Any) -> bool:
         msg = commit.message.strip().lower()
         return any(msg.startswith(p.lower()) for p in STASH_PREFIXES)
 
     try:
         # Iterar solo sobre heads y remotes
         refs = list(repo.heads) + list(repo.remotes[0].refs if repo.remotes else [])
-        seen = set()
+        seen: set[str] = set()
         commits = []
         for ref in refs:
             for c in repo.iter_commits(ref):
@@ -71,13 +72,13 @@ def obtener_historial(repo: Repo) -> dict:
     fechas = sorted(c.committed_datetime for c in commits)
 
     print(f"[INFO] Procesando metadatos para {len(commits)} commits...")
-    lista = []
+    lista: list[dict[str, Any]] = []
 
     git_show = repo.git.show
     from_timestamp = datetime.fromtimestamp
     strftime_fmt = "%Y-%m-%d %H:%M"
 
-    for i, c in enumerate(commits):
+    for c in commits:
         msg_lines = c.message.strip().splitlines()
         first_line = msg_lines[0][:80] if msg_lines else "Sin mensaje"
 
@@ -91,7 +92,7 @@ def obtener_historial(repo: Repo) -> dict:
             diff_preview = git_show(commit_hexsha, "-p", "--stat", "--no-color", "--format=", max_count=1)
             if len(diff_preview) > 6000:
                 diff_preview = diff_preview[:6000] + "\n\n... (diff truncado por tamaño, mostrando primeros 6000 caracteres) ..."
-        except:
+        except Exception:
             diff_preview = "(Error cargando diff)"
 
         lista.append({
@@ -118,7 +119,7 @@ def obtener_historial(repo: Repo) -> dict:
 # SECCIÓN 2 — TAGS Y VERSIONADO
 # ──────────────────────────────────────────────
 
-def obtener_tags(repo: Repo) -> list:
+def obtener_tags(repo: Repo) -> list[dict[str, Any]]:
     """Obtiene todos los tags del repositorio con su metadata."""
     tags = []
     for tag in repo.tags:
@@ -163,7 +164,7 @@ def obtener_tags(repo: Repo) -> list:
 # SECCIÓN 3 — ANÁLISIS TOPOLÓGICO DEL GRAFO GIT
 # ──────────────────────────────────────────────
 
-def comparar_tags(repo: Repo, tags: list) -> dict | None:
+def comparar_tags(repo: Repo, tags: list[dict[str, Any]]) -> dict[str, Any] | None:
     """Compara los dos últimos tags (topológicamente) y retorna diferencias."""
     if len(tags) < 2:
         return None
@@ -185,8 +186,10 @@ def comparar_tags(repo: Repo, tags: list) -> dict | None:
         try:
             diff = base.diff(c_actual)
             for d in diff:
-                if d.a_path: archivos_modificados.add(d.a_path)
-                if d.b_path: archivos_modificados.add(d.b_path)
+                if d.a_path:
+                    archivos_modificados.add(d.a_path)
+                if d.b_path:
+                    archivos_modificados.add(d.b_path)
         except Exception:
             pass
 
@@ -216,16 +219,16 @@ def comparar_tags(repo: Repo, tags: list) -> dict | None:
 
 # ── 3a. Construcción del mapa completo de commits (DAG) ──────────────────────
 
-def construir_mapa_commits(repo: Repo) -> dict:
+def construir_mapa_commits(repo: Repo) -> dict[str, Any]:
     """
     Recorre ALL refs (branches locales, remotas, tags) y construye un dict
     {hexsha_completo: commit_obj} con todos los commits accesibles del repo.
     Excluye refs de stash para no contaminar el grafo.
     """
     STASH_PREFIXES = ("refs/stash", "stash@")
-    seen = {}
+    seen: dict[str, Any] = {}
 
-    def _walk(ref_commit):
+    def _walk(ref_commit: Any) -> None:
         stack = [ref_commit]
         while stack:
             c = stack.pop()
@@ -236,34 +239,28 @@ def construir_mapa_commits(repo: Repo) -> dict:
 
     # Branches locales
     for head in repo.heads:
-        try:
+        with suppress(Exception):
             _walk(head.commit)
-        except Exception:
-            pass
 
     # Branches remotas
     for remote in repo.remotes:
         for ref in remote.refs:
             if any(ref.name.startswith(p) for p in STASH_PREFIXES):
                 continue
-            try:
+            with suppress(Exception):
                 _walk(ref.commit)
-            except Exception:
-                pass
 
     # Tags (por si algún commit de tag no está en ninguna rama)
     for tag in repo.tags:
-        try:
+        with suppress(Exception):
             _walk(tag.commit)
-        except Exception:
-            pass
 
     return seen
 
 
 # ── 3b. Identificar ramas que contienen cada tag ─────────────────────────────
 
-def identificar_ramas_de_tag(repo: Repo, commit_sha: str, sha_a_ramas: dict | None = None) -> list:
+def identificar_ramas_de_tag(repo: Repo, commit_sha: str, sha_a_ramas: dict[str, list[str]] | None = None) -> list[str]:
     """
     Devuelve lista de nombres de ramas en las que el commit del tag está presente.
     Si se pasa sha_a_ramas (un dict pre-calculado sha→[ramas]), se usa ese;
@@ -287,13 +284,13 @@ def identificar_ramas_de_tag(repo: Repo, commit_sha: str, sha_a_ramas: dict | No
     return sorted(set(ramas))
 
 
-def _construir_sha_a_ramas(repo: Repo) -> dict:
+def _construir_sha_a_ramas(repo: Repo) -> dict[str, list[str]]:
     """
     Construye un dict {sha: [rama1, rama2, ...]} en UNA SOLA llamada git.
     Lee git log --decorate=full para extraer ref-names de cada commit.
     """
     raw = repo.git.log("--all", "--pretty=format:%H %D")
-    sha_a_ramas_direct: dict = {}  # sha → ramas directas (HEAD commits)
+    sha_a_ramas_direct: dict[str, list[str]] = {}
 
     for line in raw.splitlines():
         if not line.strip():
@@ -330,7 +327,7 @@ def calcular_commits_exclusivos_tag(
     repo: Repo,
     commit_tag: Commit,
     commit_padre_tag: Commit,
-) -> dict:
+) -> dict[str, Any]:
     """
     Calcula los commits que están en commit_tag pero NO en commit_padre_tag,
     usando merge_base para encontrar el punto de divergencia exacto.
@@ -367,8 +364,10 @@ def calcular_commits_exclusivos_tag(
         try:
             diff = base.diff(commit_tag)
             for d in diff:
-                if d.a_path: archivos_set.add(d.a_path)
-                elif d.b_path: archivos_set.add(d.b_path)
+                if d.a_path:
+                    archivos_set.add(d.a_path)
+                elif d.b_path:
+                    archivos_set.add(d.b_path)
         except Exception:
             pass
 
@@ -407,7 +406,7 @@ def calcular_commits_exclusivos_tag(
 
 # ── 3d. Análisis topológico: aristas reales entre tags ───────────────────────
 
-def analizar_topologia_tags(repo: Repo, tags: list) -> dict:
+def analizar_topologia_tags(repo: Repo, tags: list[dict[str, Any]]) -> dict[str, Any]:
     """
     Determina los ancestros directos (padres de tag) en el DAG real usando
     un recorrido topológico único. Agrupa tags asociados al mismo commit.
@@ -425,10 +424,8 @@ def analizar_topologia_tags(repo: Repo, tags: list) -> dict:
             continue
         sha_a_tags_list.setdefault(sha, []).append(t["nombre"])
         if t["nombre"] not in tag_to_obj:
-            try:
+            with suppress(Exception):
                 tag_to_obj[t["nombre"]] = repo.commit(sha)
-            except Exception:
-                pass
 
     if not sha_a_tags_list:
         return {}
@@ -456,7 +453,7 @@ def analizar_topologia_tags(repo: Repo, tags: list) -> dict:
     print("[INFO] Construyendo mapa sha -> ramas...")
     sha_a_ramas_direct = _construir_sha_a_ramas(repo)
 
-    sha_al_rama_activo: dict = {}
+    sha_al_rama_activo: dict[str, set[str]] = {}
     for sha in reversed(topo_order):
         ramas_aqui = set(sha_a_ramas_direct.get(sha, []))
         sha_al_rama_activo.setdefault(sha, set()).update(ramas_aqui)
@@ -465,13 +462,13 @@ def analizar_topologia_tags(repo: Repo, tags: list) -> dict:
                 sha_al_rama_activo.get(sha, set())
             )
 
-    sha_a_ramas_completo = {
+    sha_a_ramas_completo: dict[str, list[str]] = {
         sha: sorted(ramas)
         for sha, ramas in sha_al_rama_activo.items()
     }
 
-    commit_cache = {}
-    def get_commit_cached(sha: str):
+    commit_cache: dict[str, Any] = {}
+    def get_commit_cached(sha: str) -> Any:
         if sha not in commit_cache:
             commit_cache[sha] = repo.commit(sha)
         return commit_cache[sha]
@@ -487,7 +484,8 @@ def analizar_topologia_tags(repo: Repo, tags: list) -> dict:
     for sha, tnames in sha_a_tags_list.items():
         rep_tag = tnames[0]
         commit = tag_to_obj.get(rep_tag)
-        if not commit: continue
+        if not commit:
+            continue
         resultado[sha] = {
             "all_tags":    tnames,
             "commit":      commit,
@@ -496,7 +494,7 @@ def analizar_topologia_tags(repo: Repo, tags: list) -> dict:
             "stats":       {}
         }
 
-    tags_vistos_en_commit: dict[str, set] = {}
+    tags_vistos_en_commit: dict[str, set[str]] = {}
 
     for sha in reversed(topo_order):
         tags_heredados = set()
@@ -545,7 +543,7 @@ def analizar_topologia_tags(repo: Repo, tags: list) -> dict:
 
 
 
-def generar_grafo_html(repo: Repo, tags: list, topologia: dict | None = None, historial: dict | None = None, busqueda: dict | None = None) -> str:
+def generar_grafo_html(repo: Repo, tags: list[dict[str, Any]], topologia: dict[str, Any] | None = None, historial: dict[str, Any] | None = None, busqueda: dict[str, Any] | None = None) -> str:
     """Genera un archivo HTML con un grafo interactivo de los tags y un explorador de commits."""
     if not tags:
         return "<html><body style='font-family:sans-serif; padding:50px;'><h1>No se encontraron tags</h1><p>El repositorio requiere al menos un tag para generar el grafo.</p></body></html>"
@@ -557,7 +555,8 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict | None = None, hi
     tags_by_sha: dict[str, list[dict[str, Any]]] = {}
     for t in tags:
         sha = t.get("hash_completo", "N/A")
-        if sha == "N/A": continue
+        if sha == "N/A":
+            continue
         tags_by_sha.setdefault(sha, []).append(t)
 
     shas_ordenados = sorted(tags_by_sha.keys(), key=lambda s: tags_by_sha[s][0].get("fecha_iso") or "")
@@ -567,17 +566,19 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict | None = None, hi
     env_prefixes = os.getenv("TAG_PREFIXES", "")
     PREFIJOS_LIMPIAR: list[str] = [p.strip() for p in env_prefixes.split(",") if p.strip()]
 
-    def limpiar_label(nombre):
+    def limpiar_label(nombre: str) -> str:
         for pfx in PREFIJOS_LIMPIAR:
-            if nombre.startswith(pfx): return nombre[len(pfx):]
+            if nombre.startswith(pfx):
+                return nombre[len(pfx):]
         return nombre
 
     RAMAS_PRINCIPALES = {"main", "master", "develop", "trunk"}
 
-    def es_rama_principal(ramas: list) -> bool:
+    def es_rama_principal(ramas: list[str]) -> bool:
         for r in ramas:
             n = r.split("/")[-1].lower()
-            if n in RAMAS_PRINCIPALES: return True
+            if n in RAMAS_PRINCIPALES:
+                return True
         return False
 
     # Mapeo de commits a tags (para la búsqueda)
@@ -2007,7 +2008,7 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict | None = None, hi
 # SECCIÓN 3.5 — BÚSQUEDA PROFUNDA DE COMMIT / CÓDIGO
 # ──────────────────────────────────────────────
 
-def ejecutar_busqueda(repo: Repo, criterio: str, topologia: dict) -> dict:
+def ejecutar_busqueda(repo: Repo, criterio: str, topologia: dict[str, Any]) -> dict[str, Any]:
     """
     Busca un hash, mensaje de commit, o línea de código (diff) en todo el repositorio.
     Utiliza -G (regex flexible) para diffs y --grep para mensajes.
@@ -2016,7 +2017,7 @@ def ejecutar_busqueda(repo: Repo, criterio: str, topologia: dict) -> dict:
     import re
     print(f"[INFO] Ejecutando búsqueda profunda para: '{criterio}'...")
 
-    shas_encontrados = {}  # sha -> tipo_match
+    shas_encontrados: dict[str, str] = {}
 
     # 1. ¿Es un hash de commit?
     es_posible_hash = re.match(r'^[0-9a-fA-F]{4,40}$', criterio.strip())
@@ -2039,11 +2040,7 @@ def ejecutar_busqueda(repo: Repo, criterio: str, topologia: dict) -> dict:
     # 3. Buscar por fragmento de línea de código (diff)
     # Permite encontrar combinaciones de palabras clave dispersas o ajustadas interactuando con git grep/log flexible
     partes = str(criterio).strip().split()
-    if len(partes) > 1:
-        # escapamos para regex y permitimos caracteres intermedios.
-        regex_flexible = ".*".join(re.escape(p) for p in partes)
-    else:
-        regex_flexible = re.escape(criterio)
+    regex_flexible = ".*".join(re.escape(p) for p in partes) if len(partes) > 1 else re.escape(criterio)
 
     try:
         raw_diff = repo.git.log("--all", f"-G{regex_flexible}", "-i", "--format=%H")
@@ -2081,10 +2078,12 @@ def ejecutar_busqueda(repo: Repo, criterio: str, topologia: dict) -> dict:
             try:
                 if c.parents:
                     for d in c.parents[0].diff(c):
-                        if d.a_path: archivos.append(d.a_path)
-                        elif d.b_path: archivos.append(d.b_path)
+                        if d.a_path:
+                            archivos.append(d.a_path)
+                        elif d.b_path:
+                            archivos.append(d.b_path)
                 else:
-                    for d in c.tree.diff(None):
+                    for _d in c.tree.diff(None):
                         pass
             except Exception:
                 pass
@@ -2097,12 +2096,12 @@ def ejecutar_busqueda(repo: Repo, criterio: str, topologia: dict) -> dict:
                 "autor": c.author.name,
                 "fecha": datetime.fromtimestamp(c.committed_date).strftime("%Y-%m-%d %H:%M"),
                 "tags": tags_del_commit,
-                "archivos": sorted(list(set(archivos)))
+                "archivos": sorted(set(archivos))
             })
         except Exception:
             continue
 
-    resultados.sort(key=lambda x: x["fecha"], reverse=True)
+    resultados.sort(key=lambda x: str(x["fecha"]), reverse=True)
 
     print(f"[INFO] Búsqueda finalizada. {len(resultados)} coincidencias encontradas.")
     return {
@@ -2116,10 +2115,10 @@ def ejecutar_busqueda(repo: Repo, criterio: str, topologia: dict) -> dict:
 # SECCIÓN 4 — GENERACIÓN DEL REPORTE
 # ──────────────────────────────────────────────
 
-def generar_reporte(repo_path: str, historial: dict, tags: list, comparacion: dict | None, busqueda: dict | None = None) -> str:
+def generar_reporte(repo_path: str, historial: dict[str, Any], tags: list[dict[str, Any]], comparacion: dict[str, Any] | None, busqueda: dict[str, Any] | None = None) -> str:
     lineas = []
 
-    def separador(titulo: str):
+    def separador(titulo: str) -> None:
         lineas.append(f"\n{'=' * 60}")
         lineas.append(f"  {titulo}")
         lineas.append(f"{'=' * 60}")
@@ -2217,7 +2216,7 @@ def generar_reporte(repo_path: str, historial: dict, tags: list, comparacion: di
 # ENTRY POINT
 # ──────────────────────────────────────────────
 
-def main():
+def main() -> None:
     """Función principal del analizador de repositorios Git."""
     parser = argparse.ArgumentParser(
         description="Analizador técnico offline de repositorio Git local."
@@ -2278,10 +2277,7 @@ def main():
     analysis_dir.mkdir(parents=True, exist_ok=True)
 
     # Determinar nombre del archivo de reporte
-    if args.output:
-        output_filename = Path(args.output).name
-    else:
-        output_filename = "reporte.txt"
+    output_filename = Path(args.output).name if args.output else "reporte.txt"
 
     output_path = analysis_dir / output_filename
     grafo_path = analysis_dir / "reporte_grafo.html"

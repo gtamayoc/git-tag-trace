@@ -7,8 +7,10 @@ de commits antes de analizar diffs (que es la operación más costosa).
 Nunca escribe en el repositorio. Solo lectura.
 """
 
+from typing import Any
 
-def seleccionar_estrategia(params: dict) -> dict:
+
+def seleccionar_estrategia(params: dict[str, Any]) -> dict[str, Any]:
     """
     Dado un dict de parámetros normalizados (de filters.py), determina:
         - el modo definitivo (s / g / grep / l)
@@ -23,17 +25,16 @@ def seleccionar_estrategia(params: dict) -> dict:
           "flags_contenido": list,  # flags de diff/texto a aplicar DESPUÉS
         }
     """
-    texto   = params.get("texto", "").strip()
-    modo    = params.get("modo", "auto")
-    autor   = params.get("autor", "").strip()
-    desde   = params.get("desde", "").strip()
-    hasta   = params.get("hasta", "").strip()
-    archivo = params.get("archivo", "").strip()
-    funcion = params.get("funcion", "").strip()
-    max_count = params.get("max_count", 2000)
+    texto: str = params.get("texto", "").strip()
+    modo: str = params.get("modo", "auto")
+    autor: str = params.get("autor", "").strip()
+    desde: str = params.get("desde", "").strip()
+    hasta: str = params.get("hasta", "").strip()
+    archivo: str = params.get("archivo", "").strip()
+    funcion: str = params.get("funcion", "").strip()
+    max_count: int = params.get("max_count", 2000)
 
-    # ── Flags de acotamiento (siempre van primero) ──────────────────────────
-    flags_base = ["--all"]
+    flags_base: list[str] = ["--all"]
     if autor:
         flags_base.append(f"--author={autor}")
     if desde:
@@ -42,21 +43,18 @@ def seleccionar_estrategia(params: dict) -> dict:
         flags_base.append(f"--until={hasta}")
     flags_base.append(f"--max-count={max_count}")
 
-    # ── Determinar modo definitivo ───────────────────────────────────────────
     if modo == "auto":
         if archivo and (funcion or texto.isdigit()):
-            modo = "l"          # Trazabilidad de función/rango
+            modo = "l"
         elif modo == "auto" and texto:
-            # Heurística: si el texto parece un patrón regex, usar -G; si no, -S
             REGEX_INDICADORES = (r".*", r".+", r"\d", r"\w", r"[", r"(", r"^", r"|")
             es_regex = any(ind in texto for ind in REGEX_INDICADORES)
             modo = "g" if es_regex else "grep"
         else:
-            modo = "grep"       # Fallback más rápido (solo metadatos)
+            modo = "grep"
 
-    # ── Flags de contenido según modo ───────────────────────────────────────
-    flags_contenido = []
-    descripcion = ""
+    flags_contenido: list[str] = []
+    descripcion: str = ""
 
     if modo == "s":
         flags_contenido = [f"-S{texto}", "--name-only", "--format=%H"]
@@ -71,17 +69,13 @@ def seleccionar_estrategia(params: dict) -> dict:
         descripcion = f"Mensaje de commit (--grep): busca '{texto}' en mensajes"
 
     elif modo == "l":
-        # Para -L necesitamos el repo directamente (ver engine.py)
-        if funcion:
-            rango = f":{funcion}:{archivo}"
-        else:
-            rango = f"{texto}:{archivo}"  # texto = "desde,hasta"
+        rango = f":{funcion}:{archivo}" if funcion else f"{texto}:{archivo}"
         flags_contenido = [f"-L{rango}", "--format=%H"]
         descripcion = f"Trazabilidad (-L): historia de '{funcion or texto}' en {archivo}"
 
     return {
-        "modo":             modo,
-        "descripcion":      descripcion,
-        "flags_base":       flags_base,
-        "flags_contenido":  flags_contenido,
+        "modo": modo,
+        "descripcion": descripcion,
+        "flags_base": flags_base,
+        "flags_contenido": flags_contenido,
     }

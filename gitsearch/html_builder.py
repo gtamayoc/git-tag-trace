@@ -11,9 +11,10 @@ El resultado se inyecta en el HTML via el placeholder <!-- GITSEARCH_PANEL -->.
 """
 
 import json
+from typing import Any
 
 
-def generar_panel_busqueda(commits_data: list) -> str:
+def generar_panel_busqueda(commits_data: list[dict[str, Any]]) -> str:
     """
     Genera el bloque completo (CSS + HTML + JS) del panel de búsqueda avanzada.
 
@@ -511,7 +512,7 @@ function gsSelectResult(el, fullHash, tagSha) {{
   if (typeof selectCommitByHash === 'function') {{
     selectCommitByHash(fullHash);
   }}
-  
+
   // Abrir la vista de detalle
   if (typeof showCommitModal !== 'undefined') {{
     showCommitModal(fullHash);

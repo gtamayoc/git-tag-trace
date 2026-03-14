@@ -11,20 +11,22 @@ Nunca escribe en el repositorio. Nunca envía datos al remoto.
 from datetime import datetime
 from typing import Any
 
+from git import Repo
+
 from .filters import FiltroInvalido, validar_y_normalizar
 from .strategy import seleccionar_estrategia
 
 
-def buscar(repo, params: dict, topologia: dict[str, Any] | None = None) -> dict:
+def buscar(repo: Repo, params: dict[str, Any], topologia: dict[str, Any] | None = None) -> dict[str, Any]:
     """
     Busca commits en el repositorio según los parámetros dados.
 
     Args:
-        repo      : objeto Repo de GitPython (ya abierto, solo lectura)
-        params    : dict con campos: texto, modo, autor, desde, hasta,
-                    archivo, funcion, max_count
-        topologia : dict pre-calculado {sha: info} de main.py (opcional,
-                    para enriquecer resultados con info de tags)
+        repo: objeto Repo de GitPython (ya abierto, solo lectura)
+        params: dict con campos: texto, modo, autor, desde, hasta,
+                archivo, funcion, max_count
+        topologia: dict pre-calculado {sha: info} de main.py (opcional,
+                   para enriquecer resultados con info de tags)
 
     Retorna dict con estructura compatible con __GLOBAL_SEARCH__ del HTML:
         {
@@ -42,53 +44,52 @@ def buscar(repo, params: dict, topologia: dict[str, Any] | None = None) -> dict:
                 "fecha":      str,
                 "tags":       list[str],
                 "archivos":   list[str],
-                "parents":    list[str],   ← hash corto del padre (para UI)
-                "parent_full": list[str],  ← hash completo del padre
-                "tag_sha":    str | None,  ← sha del nodo del grafo que contiene este commit
+                "parents":    list[str],
+                "parent_full": list[str],
+                "tag_sha":    str | None,
               }
           ]
         }
     """
-    # 1. Validar parámetros
     try:
         p = validar_y_normalizar(params)
     except FiltroInvalido as e:
-        return {"criterio": params.get("texto", ""), "modo": "error",
-                "descripcion": f"Parámetro inválido: {e}", "total": 0, "resultados": []}
+        return {
+            "criterio": params.get("texto", ""),
+            "modo": "error",
+            "descripcion": f"Parámetro inválido: {e}",
+            "total": 0,
+            "resultados": []
+        }
 
-    # 2. Elegir estrategia
     estrategia = seleccionar_estrategia(p)
-    modo       = estrategia["modo"]
-    flags      = estrategia["flags_base"] + estrategia["flags_contenido"]
+    modo = estrategia["modo"]
+    flags = estrategia["flags_base"] + estrategia["flags_contenido"]
 
     print(f"[GitSearch] {estrategia['descripcion']}")
 
-    # 3. Ejecutar comando git (solo lectura)
-    shas_encontrados = {}  # sha_completo → tipo_match
+    shas_encontrados: dict[str, str] = {}
 
     if not p["texto"] and not p["autor"] and not p["desde"] and not p["hasta"]:
-        # Sin criterios reales: evitar escanear todo el repositorio
         return {
-            "criterio":    "",
-            "modo":        modo,
+            "criterio": "",
+            "modo": modo,
             "descripcion": estrategia["descripcion"],
-            "total":       0,
-            "resultados":  []
+            "total": 0,
+            "resultados": []
         }
 
     try:
         raw = repo.git.log(*flags)
         for linea in raw.splitlines():
             linea = linea.strip()
-            if linea and len(linea) == 40 and all(c in "0123456789abcdefABCDEF" for c in linea):
-                if linea not in shas_encontrados:
-                    shas_encontrados[linea] = estrategia["descripcion"]
+            if linea and len(linea) == 40 and all(c in "0123456789abcdefABCDEF" for c in linea) and linea not in shas_encontrados:
+                shas_encontrados[linea] = estrategia["descripcion"]
     except Exception as e:
         print(f"[GitSearch] Error en git log: {e}")
 
-    # 4. Construir mapa commit → tags desde topología (reutiliza la ya calculada)
-    commit_to_tags = {}   # hash_corto → [tags]
-    commit_to_sha  = {}   # hash_corto → sha_nodo_del_grafo
+    commit_to_tags: dict[str, list[str]] = {}
+    commit_to_sha: dict[str, str] = {}
     if topologia:
         for tag_sha_key, info in topologia.items():
             nombres = info.get("all_tags", [])
@@ -107,7 +108,7 @@ def buscar(repo, params: dict, topologia: dict[str, Any] | None = None) -> dict:
     from_timestamp = datetime.fromtimestamp
     strftime_fmt = "%Y-%m-%d %H:%M"
 
-    resultados = []
+    resultados: list[dict[str, Any]] = []
 
     for sha, tipo in shas_encontrados.items():
         try:
@@ -130,14 +131,14 @@ def buscar(repo, params: dict, topologia: dict[str, Any] | None = None) -> dict:
                 if cached_tags:
                     tags_del_commit = cached_tags
 
-            archivos = []
+            archivos: list[str] = []
             try:
                 if c.parents:
                     parents0 = c.parents[0]
                     cached_parent = commit_cache.get(parents0.hexsha)
                     if cached_parent is None:
                         cached_parent = parents0
-                        commit_cache[parents0.hexsha] = parents0
+                        commit_cache[parents0.hexsha] = cached_parent
                     for d in cached_parent.diff(c):
                         if d.a_path:
                             archivos.append(d.a_path)
@@ -147,21 +148,21 @@ def buscar(repo, params: dict, topologia: dict[str, Any] | None = None) -> dict:
                 pass
 
             parents_corto = [p.hexsha[:7] for p in c.parents]
-            parents_full  = [p.hexsha for p in c.parents]
+            parents_full = [p.hexsha for p in c.parents]
 
             resultados.append({
-                "hash":        hash_corto,
-                "full_hash":   hexsha,
-                "tipo":        tipo,
-                "mensaje":     message.splitlines()[0][:100] if message else "Sin mensaje",
+                "hash": hash_corto,
+                "full_hash": hexsha,
+                "tipo": tipo,
+                "mensaje": message.splitlines()[0][:100] if message else "Sin mensaje",
                 "mensaje_full": message.strip() if message else "",
-                "autor":       autor,
-                "fecha":       from_timestamp(committed_date).strftime(strftime_fmt),
-                "tags":        tags_del_commit,
-                "archivos":    sorted(set(archivos)),
-                "parents":     parents_corto,
+                "autor": autor,
+                "fecha": from_timestamp(committed_date).strftime(strftime_fmt),
+                "tags": tags_del_commit,
+                "archivos": sorted(set(archivos)),
+                "parents": parents_corto,
                 "parent_full": parents_full,
-                "tag_sha":     tag_sha,
+                "tag_sha": tag_sha,
             })
         except Exception:
             continue
@@ -170,9 +171,9 @@ def buscar(repo, params: dict, topologia: dict[str, Any] | None = None) -> dict:
 
     print(f"[GitSearch] {len(resultados)} coincidencias encontradas con modo '{modo}'.")
     return {
-        "criterio":    p["texto"],
-        "modo":        modo,
+        "criterio": p["texto"],
+        "modo": modo,
         "descripcion": estrategia["descripcion"],
-        "total":       len(resultados),
-        "resultados":  resultados,
+        "total": len(resultados),
+        "resultados": resultados,
     }

@@ -1143,7 +1143,7 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
     </div>
 
     <!-- Modal Commit Detail -->
-    <div id="commit-modal" class="modal-overlay" onclick="if(event.target===this) this.style.display='none'">
+    <div id="commit-modal" class="modal-overlay" onclick="if(event.target===this) hideCommitModal()">
         <div class="modal-content">
             <div class="modal-header">
                 <div style="flex:1;">
@@ -1151,7 +1151,7 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
                     <h2 id="modal-title" style="margin:0; font-size:1.1rem; font-weight:600; color:var(--text-primary); margin-bottom:8px; line-height:1.4;"></h2>
                     <div id="modal-meta" style="color:var(--text-secondary); font-size:0.82rem;"></div>
                 </div>
-                <button class="close-btn" style="position:static; margin-left:16px; font-size:24px;" onclick="document.getElementById('commit-modal').style.display='none'">&times;</button>
+                <button class="close-btn" style="position:static; margin-left:16px; font-size:24px;" onclick="hideCommitModal()">&times;</button>
             </div>
             <div class="modal-body">
                 <!-- [VISUAL] info cards monocromáticas -->
@@ -1343,17 +1343,6 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
             return nodes.get().map(n => ({ id: n.id, label: n.label, x: pos[n.id].x, y: pos[n.id].y }));
         };
 
-        // PARCHE REFINADO: Evitar que el mapa siga el movimiento si el ratón se suelta fuera.
-        window.addEventListener("pointerup", (e) => {
-            if (typeof network !== 'undefined') {
-                // Solo reiniciamos si no estamos sobre la zona de controles o panel
-                if (!e.target.closest('.controls') && !e.target.closest('.side-panel')) {
-                    network.setOptions({ interaction: { dragView: false } });
-                    network.setOptions({ interaction: { dragView: true } });
-                }
-            }
-        });
-
         if (globalSearchData && globalSearchData.total > 0) {
             document.getElementById('nav-search').style.display = 'block';
             setTimeout(() => {
@@ -1391,10 +1380,6 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
         }
 
         network.on("click", (params) => {
-            // Desenlazar un posible enganche del drag después de click
-            network.setOptions({ interaction: { dragView: false } });
-            network.setOptions({ interaction: { dragView: true } });
-            
             if (params.nodes.length > 0) {
                 const tagSha = params.nodes[0];
                 const node = nodes.get(tagSha);
@@ -1674,6 +1659,14 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
             }
             if (!commit) return;
             
+            // Guardar estado visual antes de abrir el modal
+            if (typeof network !== 'undefined') {
+                savedCameraState = {
+                    position: network.getViewPosition(),
+                    scale: network.getScale()
+                };
+            }
+            
             const msgList = (commit.mensaje_full || commit.mensaje || '').split('\\n');
             document.getElementById('modal-title').textContent = msgList[0];
             // [VISUAL ONLY] Metadatos del modal con paleta monocromática
@@ -1692,7 +1685,7 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
                         <span style="font-family:'JetBrains Mono',monospace; font-size:0.80rem; color:#888888;
                               background:#111111; border:1px solid rgba(255,255,255,0.10); border-radius:4px;
                               padding:2px 8px; cursor:pointer; transition:color 0.15s;"
-                              onclick="document.getElementById('commit-modal').style.display='none'; if(typeof gsNavParent==='function'){gsNavParent('${ph}');}else{selectCommitByHash('${ph}');}">↑ ${ph}</span>
+                              onclick="hideCommitModal(); if(typeof gsNavParent==='function'){gsNavParent('${ph}');}else{selectCommitByHash('${ph}');}">↑ ${ph}</span>
                         ${getCopyBtnHtml(ph)}
                     </div>
                 `).join('');
@@ -1704,6 +1697,20 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
             document.getElementById('modal-diff').innerHTML = formatDiff(rawDiff);
             
             document.getElementById('commit-modal').style.display = 'flex';
+        }
+
+        // Función para cerrar el modal y restaurar la vista
+        function hideCommitModal() {
+            document.getElementById('commit-modal').style.display = 'none';
+            // Restaurar estado visual cuando se cierra el modal
+            if (savedCameraState && typeof network !== 'undefined') {
+                network.moveTo({
+                    position: savedCameraState.position,
+                    scale: savedCameraState.scale,
+                    animation: { duration: 300, easingFunction: 'easeInOutQuad' }
+                });
+                savedCameraState = null;
+            }
         }
 
 
@@ -1724,12 +1731,28 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
         }
 
         function openPanel() {
+            // Guardar estado visual actual antes de abrir el panel
+            if (typeof network !== 'undefined') {
+                savedCameraState = {
+                    position: network.getViewPosition(),
+                    scale: network.getScale()
+                };
+            }
             document.getElementById('side-panel').classList.add('open');
             renderPanel();
         }
 
         function closePanel() {
             document.getElementById('side-panel').classList.remove('open');
+            // Restaurar estado visual cuando se cierra el panel
+            if (savedCameraState && typeof network !== 'undefined') {
+                network.moveTo({
+                    position: savedCameraState.position,
+                    scale: savedCameraState.scale,
+                    animation: { duration: 300, easingFunction: 'easeInOutQuad' }
+                });
+                savedCameraState = null;
+            }
             if (lastHighlightedNode) {
                 const t = THEMES_CONFIG[currentTheme];
                 const old = nodes.get(lastHighlightedNode);

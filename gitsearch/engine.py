@@ -92,34 +92,52 @@ def buscar(repo, params: dict, topologia: dict = None) -> dict:
         for tag_sha, info in topologia.items():
             nombres = info.get("all_tags", [])
             if nombres:
-                commit_to_tags[tag_sha[:7]] = nombres
-                commit_to_sha[tag_sha[:7]]  = tag_sha
-                for c_meta in info.get("stats", {}).get("commits_list", []):
-                    commit_to_tags[c_meta["hash"]] = nombres
-                    commit_to_sha[c_meta["hash"]]  = tag_sha
+                tag_sha_short = tag_sha[:7]
+                commit_to_tags[tag_sha_short] = nombres
+                commit_to_sha[tag_sha_short] = tag_sha
+                commits_list = info.get("stats", {}).get("commits_list", [])
+                for c_meta in commits_list:
+                    c_hash = c_meta["hash"]
+                    commit_to_tags[c_hash] = nombres
+                    commit_to_sha[c_hash] = tag_sha
 
-    # 5. Construir lista de resultados enriquecidos
+    commit_cache = {}
+
+    from_timestamp = datetime.fromtimestamp
+    strftime_fmt = "%Y-%m-%d %H:%M"
+    
     resultados = []
+    
     for sha, tipo in shas_encontrados.items():
         try:
-            c = repo.commit(sha)
+            c = commit_cache.get(sha)
+            if c is None:
+                c = repo.commit(sha)
+                commit_cache[sha] = c
+            
             hash_corto = c.hexsha[:7]
+            hexsha = c.hexsha
+            autor = c.author.name
+            committed_date = c.committed_date
+            message = c.message
 
-            # Tags asociados
             tags_del_commit = commit_to_tags.get(hash_corto) or []
             tag_sha = commit_to_sha.get(hash_corto)
+            
             if not tags_del_commit:
-                try:
-                    out_tags = repo.git.tag("--contains", c.hexsha).splitlines()
-                    tags_del_commit = [t.strip() for t in out_tags if t.strip()]
-                except Exception:
-                    tags_del_commit = []
+                cached_tags = commit_to_tags.get(hexsha)
+                if cached_tags:
+                    tags_del_commit = cached_tags
 
-            # Archivos modificados
             archivos = []
             try:
                 if c.parents:
-                    for d in c.parents[0].diff(c):
+                    parents0 = c.parents[0]
+                    cached_parent = commit_cache.get(parents0.hexsha)
+                    if cached_parent is None:
+                        cached_parent = parents0
+                        commit_cache[parents0.hexsha] = parents0
+                    for d in cached_parent.diff(c):
                         if d.a_path:
                             archivos.append(d.a_path)
                         elif d.b_path:
@@ -127,18 +145,17 @@ def buscar(repo, params: dict, topologia: dict = None) -> dict:
             except Exception:
                 pass
 
-            # Padres (para navegación en el HTML)
             parents_corto = [p.hexsha[:7] for p in c.parents]
             parents_full  = [p.hexsha for p in c.parents]
 
             resultados.append({
                 "hash":        hash_corto,
-                "full_hash":   c.hexsha,
+                "full_hash":   hexsha,
                 "tipo":        tipo,
-                "mensaje":     c.message.splitlines()[0][:100] if c.message else "Sin mensaje",
-                "mensaje_full": c.message.strip() if c.message else "",
-                "autor":       c.author.name,
-                "fecha":       datetime.fromtimestamp(c.committed_date).strftime("%Y-%m-%d %H:%M"),
+                "mensaje":     message.splitlines()[0][:100] if message else "Sin mensaje",
+                "mensaje_full": message.strip() if message else "",
+                "autor":       autor,
+                "fecha":       from_timestamp(committed_date).strftime(strftime_fmt),
                 "tags":        tags_del_commit,
                 "archivos":    sorted(set(archivos)),
                 "parents":     parents_corto,

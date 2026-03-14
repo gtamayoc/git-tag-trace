@@ -73,30 +73,36 @@ def obtener_historial(repo: Repo) -> dict:
 
     print(f"[INFO] Procesando metadatos para {len(commits)} commits...")
     lista = []
-    # Limitamos a los últimos 1500 para el explorador interactivo por rendimiento del navegador
-    # pero mantenemos la capacidad de buscar cualquier hash si se conoce.
+    
+    git_show = repo.git.show
+    from_timestamp = datetime.fromtimestamp
+    strftime_fmt = "%Y-%m-%d %H:%M"
+    
     for i, c in enumerate(commits):
         msg_lines = c.message.strip().splitlines()
         first_line = msg_lines[0][:80] if msg_lines else "Sin mensaje"
         
-        # Obtenemos diff para TODOS (removido límite offline) para que la vista
-        # detallada pueda mostrar el contenido real de los cambios.
+        commit_hexsha = c.hexsha
+        autor_name = c.author.name
+        committed_date = c.committed_date
+        parents_hashes = [p.hexsha for p in c.parents]
+        
         diff_preview = ""
         try:
-             diff_preview = repo.git.show(c.hexsha, "-p", "--stat", "--no-color", "--format=", max_count=1)
-             if len(diff_preview) > 6000:
-                 diff_preview = diff_preview[:6000] + "\n\n... (diff truncado por tamaño, mostrando primeros 6000 caracteres) ..."
+            diff_preview = git_show(commit_hexsha, "-p", "--stat", "--no-color", "--format=", max_count=1)
+            if len(diff_preview) > 6000:
+                diff_preview = diff_preview[:6000] + "\n\n... (diff truncado por tamaño, mostrando primeros 6000 caracteres) ..."
         except:
-             diff_preview = "(Error cargando diff)"
+            diff_preview = "(Error cargando diff)"
 
         lista.append({
-            "hash": c.hexsha[:7],
-            "full_hash": c.hexsha,
-            "autor": c.author.name,
-            "fecha": datetime.fromtimestamp(c.committed_date).strftime("%Y-%m-%d %H:%M"),
+            "hash": commit_hexsha[:7],
+            "full_hash": commit_hexsha,
+            "autor": autor_name,
+            "fecha": from_timestamp(committed_date).strftime(strftime_fmt),
             "mensaje": first_line,
             "mensaje_full": c.message.strip(),
-            "parents": [p.hexsha for p in c.parents],
+            "parents": parents_hashes,
             "diff": diff_preview
         })
 
@@ -323,64 +329,65 @@ def _construir_sha_a_ramas(repo: Repo) -> dict:
 
 def calcular_commits_exclusivos_tag(
     repo: Repo,
-    commit_tag: object,       # commit del tag actual
-    commit_padre_tag: object, # commit del tag ancestro
+    commit_tag: object,
+    commit_padre_tag: object,
 ) -> dict:
     """
     Calcula los commits que están en commit_tag pero NO en commit_padre_tag,
     usando merge_base para encontrar el punto de divergencia exacto.
     Esto funciona correctamente con ramas paralelas y merges.
     """
+    from_timestamp = datetime.fromtimestamp
+    strftime_fmt = "%Y-%m-%d %H:%M"
+    
     try:
         bases = repo.merge_base(commit_padre_tag, commit_tag)
         base  = bases[0] if bases else commit_padre_tag
 
-        # Commits exclusivos: ancestros de tag_actual que no son de base
         commits = list(repo.iter_commits(
             f"{base.hexsha}..{commit_tag.hexsha}", max_count=5000
         ))
 
-        autores = {c.author.name for c in commits}
+        commits_data = []
+        autores_set = set()
+        archivos_set = set()
+        
+        for c in commits:
+            autores_set.add(c.author.name)
+            message = c.message
+            commits_data.append({
+                "hash":    c.hexsha[:7],
+                "full_hash": c.hexsha,
+                "autor":   c.author.name,
+                "mensaje": message.strip().splitlines()[0][:80] if message else "",
+                "mensaje_full": message.strip() if message else "",
+                "fecha":   from_timestamp(c.committed_date).strftime(strftime_fmt),
+                "parents": [p.hexsha[:7] for p in c.parents]
+            })
 
-        # Archivos cambiados entre base y tag (diff topológicamente correcto)
-        archivos = set()
         try:
             diff = base.diff(commit_tag)
             for d in diff:
-                if d.a_path: archivos.add(d.a_path)
-                if d.b_path: archivos.add(d.b_path)
+                if d.a_path: archivos_set.add(d.a_path)
+                elif d.b_path: archivos_set.add(d.b_path)
         except Exception:
             pass
 
-        # Días desde el punto de divergencia hasta este tag
         dias = 0
         try:
             delta = (
-                datetime.fromtimestamp(commit_tag.committed_date)
-                - datetime.fromtimestamp(base.committed_date)
+                from_timestamp(commit_tag.committed_date)
+                - from_timestamp(base.committed_date)
             )
             dias = delta.days
         except Exception:
             pass
 
-        commits_data = [
-            {
-                "hash":    c.hexsha[:7],
-                "full_hash": c.hexsha,
-                "autor":   c.author.name,
-                "mensaje": c.message.strip().splitlines()[0][:80] if c.message else "",
-                "mensaje_full": c.message.strip() if c.message else "",
-                "fecha":   datetime.fromtimestamp(c.committed_date).strftime("%Y-%m-%d %H:%M"),
-                "parents": [p.hexsha[:7] for p in c.parents]
-            }
-            for c in commits
-        ]
-
         return {
             "num_commits":  len(commits),
-            "autores":      sorted(autores),
-            "num_archivos": len(archivos),
-            "archivos":     sorted(archivos),
+            "autores":      sorted(autores_set),
+            "num_archivos": len(archivos_set),
+            "archivos":     sorted(archivos_set),
             "commits_list": commits_data,
             "dias":          dias,
             "merge_base_sha": base.hexsha[:7],
@@ -447,7 +454,7 @@ def analizar_topologia_tags(repo: Repo, tags: list) -> dict:
         parent_map[sha] = pars
         topo_order.append(sha)
 
-    print("[INFO] Construyendo mapa sha → ramas...")
+    print("[INFO] Construyendo mapa sha -> ramas...")
     sha_a_ramas_direct = _construir_sha_a_ramas(repo)
 
     sha_al_rama_activo: dict = {}
@@ -463,6 +470,12 @@ def analizar_topologia_tags(repo: Repo, tags: list) -> dict:
         sha: sorted(ramas)
         for sha, ramas in sha_al_rama_activo.items()
     }
+
+    commit_cache = {}
+    def get_commit_cached(sha: str):
+        if sha not in commit_cache:
+            commit_cache[sha] = repo.commit(sha)
+        return commit_cache[sha]
 
     def es_ancestro_rapido(sha_a: str, sha_b: str) -> bool:
         try:
@@ -484,21 +497,23 @@ def analizar_topologia_tags(repo: Repo, tags: list) -> dict:
             "stats":       {}
         }
 
-    # tags_vistos_en_commit[sha] = {sha_del_tag_ancestro, ...}
     tags_vistos_en_commit: dict[str, set] = {}
 
-    # reversed(topo_order) itera desde los commits SIN PADRES (más antiguos) a los MÁS NUEVOS.
     for sha in reversed(topo_order):
         tags_heredados = set()
-        for p_sha in parent_map.get(sha, []):
-            tags_heredados.update(tags_vistos_en_commit.get(p_sha, set()))
+        parents = parent_map.get(sha)
+        if parents:
+            for p_sha in parents:
+                tags_heredados.update(tags_vistos_en_commit.get(p_sha, set()))
 
         if sha in sha_a_tags_list:
             candidatos = list(tags_heredados)
             padres_directos = []
-            if len(candidatos) == 1:
+            num_candidatos = len(candidatos)
+            
+            if num_candidatos == 1:
                 padres_directos = candidatos
-            elif len(candidatos) > 1:
+            elif num_candidatos > 1:
                 for cand_sha in candidatos:
                     es_superado = any(
                         otro_sha != cand_sha
@@ -510,12 +525,10 @@ def analizar_topologia_tags(repo: Repo, tags: list) -> dict:
 
             resultado[sha]["padres_shas"] = padres_directos
 
-            # Los commits descendientes de este punto verán ÚNICAMENTE a este punto.
             tags_vistos_en_commit[sha] = {sha}
 
-            # Procesar estadisticas solo del ancestro más directo
             if padres_directos:
-                padre_commit = repo.commit(padres_directos[0])
+                padre_commit = get_commit_cached(padres_directos[0])
                 stats = calcular_commits_exclusivos_tag(repo, resultado[sha]["commit"], padre_commit)
             else:
                 stats = {
@@ -1243,15 +1256,15 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
         }));
 
         const hasBranchesGlobal = edgesData.some(e => edgesData.filter(e2 => e2.to === e.to).length > 1);
-        let baseLevelSep = hasBranchesGlobal ? 130 : 200;
-        let baseNodeSpac = hasBranchesGlobal ? 80  : 160;
+        let baseLevelSep = hasBranchesGlobal ? 160 : 240;
+        let baseNodeSpac = hasBranchesGlobal ? 110  : 190;
 
         const network = new vis.Network(container, { nodes, edges }, {
             edges: {
                 smooth: {
-                    type: 'cubicBezier',
+                    type: 'continuous',
                     forceDirection: 'vertical',
-                    roundness: 0.4
+                    roundness: 0.5
                 }
             },
             layout: { hierarchical: { enabled: true, direction: 'UD', sortMethod: 'directed', levelSeparation: baseLevelSep, nodeSpacing: baseNodeSpac } },
@@ -1442,20 +1455,18 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
                         const commitHashes = new Set(commits.map(c => c.hash));
                         let groupHasBranches = commits.some(c => c.parents && c.parents.length > 1);
                         
-                        // Adaptive layout: check if graph is structurally branching
+                        // Adaptive layout: increase spacing to prevent ALL overlapping
                         let isGraphCurrentlyBranched = hasBranchesGlobal || groupHasBranches;
-                        let adaptLevelSep = isGraphCurrentlyBranched ? 140 : 200;
-                        let adaptNodeSpac = isGraphCurrentlyBranched ? 90  : 160;
+                        let adaptLevelSep = isGraphCurrentlyBranched ? 180 : 260;
+                        let adaptNodeSpac = isGraphCurrentlyBranched ? 140  : 220;
                         
                         network.setOptions({
                             layout: { hierarchical: { levelSeparation: adaptLevelSep, nodeSpacing: adaptNodeSpac } },
                             physics: { hierarchicalRepulsion: { nodeDistance: adaptLevelSep, springLength: adaptLevelSep } }
                         });
                         
-                        for (let i = 0; i < commits.length; i++) {
-                            const c = commits[i];
-                            const cId = "exp_" + c.hash;
-                            
+                        // Pre-calcular tamanos de nodos para spacing optimo
+                        const nodeSizes = commits.map((c) => {
                             const msgLines = (c.mensaje_full || c.mensaje || c.hash).split('\\n');
                             let labelTxt = msgLines[0];
                             if (msgLines.length > 1) {
@@ -1465,22 +1476,39 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
                                 }
                                 if (descs.length > 4) labelTxt += '\\n...';
                             }
+                            const labelLength = labelTxt.length;
+                            const lines = labelTxt.split('\\n').length;
+                            const width = Math.max(150, Math.min(380, 80 + labelLength * 4.2));
+                            const height = Math.max(40, 20 + lines * 13);
+                            return { labelTxt, width, height };
+                        });
+                        
+                        // Espaciado basado en nodos mas grandes
+                        const maxWidth = Math.max(...nodeSizes.map(n => n.width));
+                        const maxHeight = Math.max(...nodeSizes.map(n => n.height));
+                        const hSpacing = maxWidth + 70;
+                        const vSpacing = maxHeight + 90;
+                        
+                        // Grid distribution
+                        const cols = Math.max(2, Math.ceil(Math.sqrt(commits.length * 1.2)));
+                        
+                        for (let i = 0; i < commits.length; i++) {
+                            const c = commits[i];
+                            const cId = "exp_" + c.hash;
                             
+                            const { labelTxt, width, height } = nodeSizes[i];
                             const titleTxt = `Hash: ${c.hash}\\nAutor: ${c.autor}\\nFecha: ${c.fecha}\\n\\n${c.mensaje_full || c.mensaje}`;
                             
                             const pos = savedPositions[cId];
                             
-                            // Initialize new nodes safely beneath the parent
-                            // Calculate simple topological level based on index to spread them downward nicely
-                            const topoLevel = i + 1;
-                            const hSpacing = 160; 
-                            const vSpacing = 90;
-                            
-                            // Alternate horizontal placement slightly to aid physics unraveling of branches
-                            const xOffset = (i % 3 === 0) ? 0 : (i % 2 === 0 ? hSpacing : -hSpacing);
+                            // Grid positioning with stagger
+                            const col = i % cols;
+                            const row = Math.floor(i / cols);
+                            const xOffset = (col - Math.floor(cols / 2)) * hSpacing;
+                            const yOffset = row * vSpacing;
                             
                             let initialX = pos ? pos.x : (parentPos.x + xOffset);
-                            let initialY = pos ? pos.y : (parentPos.y + (topoLevel * vSpacing));
+                            let initialY = pos ? pos.y : (parentPos.y + 100 + yOffset);
                             
                             newNodes.push({
                                 id: cId,
@@ -1489,6 +1517,8 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
                                 label: labelTxt,
                                 title: titleTxt,
                                 shape: 'box',
+                                widthConstraint: width + 15,
+                                heightConstraint: height + 10,
                                 color: { background: currentTheme === 'dark' ? '#2a2a2a' : '#dfdbd4', border: currentTheme === 'dark' ? '#555555' : '#b1b6bd' },
                                 font: { color: THEMES_CONFIG[currentTheme].font, size: 10, face: 'Inter', align: 'left' },
                                 x: initialX,
@@ -1497,7 +1527,15 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
                             
                             let parents = c.parents || [];
                             if (parents.length === 0 && i === 0 && isAttachedToParent) {
-                                newEdges.push({ id: `exp_edge_start_${c.hash}`, from: startSha, to: cId, arrows: "to", color: { color: THEMES_CONFIG[currentTheme].edgeHi } });
+                                newEdges.push({ 
+                                    id: `exp_edge_start_${c.hash}`, 
+                                    from: startSha, 
+                                    to: cId, 
+                                    arrows: "to", 
+                                    smooth: { enabled: true, type: "continuous" },
+                                    color: { color: THEMES_CONFIG[currentTheme].edgeHi },
+                                    width: 1.5
+                                });
                             } else {
                                 let linkedToStart = false;
                                 for (let p of parents) {
@@ -1507,12 +1545,22 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
                                             from: "exp_" + p,
                                             to: cId,
                                             arrows: "to",
-                                            color: { color: THEMES_CONFIG[currentTheme].edgeHi }, width: 1.5
+                                            smooth: { enabled: true, type: "continuous" },
+                                            color: { color: THEMES_CONFIG[currentTheme].edgeHi },
+                                            width: 1.5
                                         });
                                     } else {
                                         // Parent not in expanded group, link from startSha tag if appropriate
                                         if (isAttachedToParent && !linkedToStart) {
-                                            newEdges.push({ id: `exp_edge_start_${p}_${c.hash}`, from: startSha, to: cId, arrows: "to", color: { color: THEMES_CONFIG[currentTheme].edgeHi } });
+                                            newEdges.push({ 
+                                                id: `exp_edge_start_${p}_${c.hash}`, 
+                                                from: startSha, 
+                                                to: cId, 
+                                                arrows: "to", 
+                                                smooth: { enabled: true, type: "continuous" },
+                                                color: { color: THEMES_CONFIG[currentTheme].edgeHi },
+                                                width: 1.5
+                                            });
                                             linkedToStart = true;
                                         }
                                     }
@@ -1537,8 +1585,10 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
                                     from: "exp_" + c.hash,
                                     to: tagSha,
                                     arrows: "to",
+                                    smooth: { enabled: true, type: "continuous" },
                                     color: { color: THEMES_CONFIG[currentTheme].edgeHi },
-                                    dashes: [2, 2]
+                                    dashes: [4, 4],
+                                    width: 1.5
                                 });
                                 hasLeafLinkedToTag = true;
                             }
@@ -1551,8 +1601,10 @@ def generar_grafo_html(repo: Repo, tags: list, topologia: dict = None, historial
                                  from: "exp_" + commits[commits.length-1].hash,
                                  to: tagSha,
                                  arrows: "to",
+                                 smooth: { enabled: true, type: "continuous" },
                                  color: { color: THEMES_CONFIG[currentTheme].edgeHi },
-                                 dashes: [2, 2]
+                                 dashes: [4, 4],
+                                 width: 1.5
                              });
                         }
                         

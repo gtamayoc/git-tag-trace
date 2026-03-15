@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 html_builder.py — Generador del panel de búsqueda avanzada para el HTML.
 
@@ -12,9 +11,10 @@ El resultado se inyecta en el HTML via el placeholder <!-- GITSEARCH_PANEL -->.
 """
 
 import json
+from typing import Any
 
 
-def generar_panel_busqueda(commits_data: list) -> str:
+def generar_panel_busqueda(commits_data: list[dict[str, Any]]) -> str:
     """
     Genera el bloque completo (CSS + HTML + JS) del panel de búsqueda avanzada.
 
@@ -512,7 +512,7 @@ function gsSelectResult(el, fullHash, tagSha) {{
   if (typeof selectCommitByHash === 'function') {{
     selectCommitByHash(fullHash);
   }}
-  
+
   // Abrir la vista de detalle
   if (typeof showCommitModal !== 'undefined') {{
     showCommitModal(fullHash);
@@ -530,18 +530,36 @@ function gsNavParent(parentFullHash) {{
   }}
 }}
 
+// ── Sistema de estado visual de la UI del grafo ────────
+let gsSavedViewState = null;
+
+function gsSaveViewState() {{
+  if (typeof network === 'undefined') return;
+  gsSavedViewState = {{
+    position: network.getViewPosition(),
+    scale: network.getScale()
+  }};
+}}
+
+function gsRestoreViewState() {{
+  if (typeof network === 'undefined' || !gsSavedViewState) return;
+  network.moveTo({{
+    position: gsSavedViewState.position,
+    scale: gsSavedViewState.scale,
+    animation: {{ duration: 300, easingFunction: 'easeInOutQuad' }}
+  }});
+  gsSavedViewState = null;
+}}
+
 // ── Ir a nodo en el grafo y resaltarlo ───────────────
 function gsIrANodo(sha) {{
   if (typeof network === 'undefined' || typeof nodes === 'undefined') return;
+  gsSaveViewState();
   if (typeof highlightNode === 'function') {{
     highlightNode(sha);
   }}
   network.focus(sha, {{ scale: 1.3, animation: false }});
   network.selectNodes([sha]);
-  
-  // Parche para vis-network: evitar que la cámara quede enganchada al ratón
-  network.setOptions({{ interaction: {{ dragView: false }} }});
-  network.setOptions({{ interaction: {{ dragView: true }} }});
 }}
 
 // ── Resaltar nodos de todos los resultados ────────────

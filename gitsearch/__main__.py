@@ -678,8 +678,8 @@ def generar_grafo_html(repo: Repo, tags: list[dict[str, Any]], topologia: dict[s
             --border-normal:   rgba(255, 255, 255, 0.12);
             --border-strong:   rgba(255, 255, 255, 0.20);
 
-            --diff-added:      #4a9960;
-            --diff-removed:    #b55050;
+            --diff-added:      #3d8b4f;
+            --diff-removed:    #c44545;
 
             --shadow-panel:    0 8px 40px rgba(0, 0, 0, 0.5);
             --shadow-modal:    0 20px 80px rgba(0, 0, 0, 0.7);
@@ -714,8 +714,8 @@ def generar_grafo_html(repo: Repo, tags: list[dict[str, Any]], topologia: dict[s
             --border-normal:   rgba(0, 0, 0, 0.14);
             --border-strong:   rgba(0, 0, 0, 0.25);
 
-            --diff-added:      #2e7a43;
-            --diff-removed:    #a83232;
+            --diff-added:      #1a5c2e;
+            --diff-removed:    #8b2020;
 
             --shadow-panel:    0 12px 30px rgba(0, 0, 0, 0.15);
             --shadow-modal:    0 20px 60px rgba(0, 0, 0, 0.25);
@@ -1309,9 +1309,39 @@ def generar_grafo_html(repo: Repo, tags: list[dict[str, Any]], topologia: dict[s
             if (lastHighlightedNode) highlightNode(lastHighlightedNode);
         }
 
-        // Feedback de cursor para "Comodidad" al mover nodos
-        network.on("hoverNode", () => container.style.cursor = 'grab');
-        network.on("blurNode",  () => container.style.cursor = 'default');
+        // Feedback visual para hover de nodos
+        let lastHoveredNode = null;
+        network.on("hoverNode", (params) => {
+            container.style.cursor = 'pointer';
+            if (params.node && params.node !== lastHighlightedNode) {
+                lastHoveredNode = params.node;
+                const t = THEMES_CONFIG[currentTheme];
+                const node = nodes.get(params.node);
+                if (node) {
+                    // Hover: slightly brighter background with contrasting text
+                    const hoverBg = currentTheme === 'dark' ? '#e8e8e8' : '#2a2a2a';
+                    const hoverBorder = currentTheme === 'dark' ? '#cccccc' : '#555555';
+                    const hoverText = currentTheme === 'dark' ? '#1a1a1f' : '#ffffff';
+                    nodes.update({ id: params.node, color: { background: hoverBg, border: hoverBorder }, font: { color: hoverText } });
+                }
+            }
+        });
+        network.on("blurNode", (params) => {
+            container.style.cursor = 'default';
+            if (params.node && params.node !== lastHighlightedNode) {
+                const t = THEMES_CONFIG[currentTheme];
+                const node = nodes.get(params.node);
+                if (node) {
+                    // Restore original colors
+                    const restoreBg = node.is_main ? t.mainBg : t.sideBg;
+                    const restoreBorder = node.is_main ? t.mainBorder : t.sideBorder;
+                    nodes.update({ id: params.node, color: { background: restoreBg, border: restoreBorder }, font: { color: t.font } });
+                }
+            }
+            lastHoveredNode = null;
+        });
+
+        // Feedback de cursor para mover nodos
         network.on("dragStart", (p) => { if(p.nodes.length > 0) container.style.cursor = 'grabbing'; });
         network.on("dragEnd",   (params) => { 
             container.style.cursor = 'grab'; 
@@ -1712,9 +1742,11 @@ def generar_grafo_html(repo: Repo, tags: list[dict[str, Any]], topologia: dict[s
                 // [VISUAL ONLY] Padres con estilos monocromáticos
                 pContainer.innerHTML = commit.parents.map(ph => `
                     <div style="display:flex; align-items:center;">
-                        <span style="font-family:'JetBrains Mono',monospace; font-size:0.80rem; color:#888888;
-                              background:#111111; border:1px solid rgba(255,255,255,0.10); border-radius:4px;
-                              padding:2px 8px; cursor:pointer; transition:color 0.15s;"
+                        <span style="font-family:'JetBrains Mono',monospace; font-size:0.80rem; color:#b0b0b0;
+                              background:#1a1a1a; border:1px solid rgba(255,255,255,0.15); border-radius:4px;
+                              padding:3px 8px; cursor:pointer; transition:color 0.15s, background 0.15s;"
+                              onmouseover="this.style.background='#252525'; this.style.color='#d0d0d0'"
+                              onmouseout="this.style.background='#1a1a1a'; this.style.color='#b0b0b0'"
                               onclick="hideCommitModal(); if(typeof gsNavParent==='function'){gsNavParent('${ph}');}else{selectCommitByHash('${ph}');}">↑ ${ph}</span>
                         ${getCopyBtnHtml(ph)}
                     </div>
@@ -1750,13 +1782,15 @@ def generar_grafo_html(repo: Repo, tags: list[dict[str, Any]], topologia: dict[s
                 const old = nodes.get(lastHighlightedNode);
                 if (old) {
                     if (old.is_expanded_commit) {
-                        nodes.update({ id: lastHighlightedNode, color: { background: currentTheme === 'dark' ? '#2a2a2a' : '#dfdbd4', border: currentTheme === 'dark' ? '#555555' : '#b1b6bd' } });
+                        nodes.update({ id: lastHighlightedNode, color: { background: currentTheme === 'dark' ? '#2a2a2a' : '#dfdbd4', border: currentTheme === 'dark' ? '#555555' : '#b1b6bd' }, font: { color: t.font } });
                     } else {
-                        nodes.update({ id: lastHighlightedNode, color: { background: old.is_main ? t.mainBg : t.sideBg, border: old.is_main ? t.mainBorder : t.sideBorder } });
+                        nodes.update({ id: lastHighlightedNode, color: { background: old.is_main ? t.mainBg : t.sideBg, border: old.is_main ? t.mainBorder : t.sideBorder }, font: { color: t.font } });
                     }
                 }
             }
-            nodes.update({ id: nodeId, color: { background: currentTheme === 'dark' ? '#ffffff' : '#000000', border: currentTheme === 'dark' ? '#ffffff' : '#000000' } });
+            // Highlight with contrasting colors - white background needs dark text
+            const highlightTextColor = currentTheme === 'dark' ? '#1a1a1f' : '#ffffff';
+            nodes.update({ id: nodeId, color: { background: currentTheme === 'dark' ? '#ffffff' : '#000000', border: currentTheme === 'dark' ? '#ffffff' : '#000000' }, font: { color: highlightTextColor } });
             lastHighlightedNode = nodeId;
         }
 
@@ -1858,14 +1892,14 @@ def generar_grafo_html(repo: Repo, tags: list[dict[str, Any]], topologia: dict[s
                     </div>
 
                     <!-- [VISUAL] Sección analizar diff — monocromática -->
-                    <div style="background:#141414; padding:14px 16px; border-radius:8px; border:1px solid var(--border-subtle);">
+                    <div style="background:#181a1f; padding:14px 16px; border-radius:8px; border:1px solid var(--border-subtle);">
                         <div class="section-title" style="margin-top:0;">Analizar Cambios Reales</div>
-                        <div style="font-size:0.78rem; color:var(--text-muted); margin-bottom:12px; line-height:1.5;">
+                        <div style="font-size:0.78rem; color:var(--text-secondary); margin-bottom:12px; line-height:1.5;">
                             Visualice los archivos modificados, adiciones y supresiones de este commit.
                         </div>
                         <button onclick="showCommitModal('${selectedCommit.full_hash}')"
-                                style="background:#1a1a1a; border:1px solid var(--border-normal); color:var(--text-primary); padding:9px 14px; border-radius:6px; cursor:pointer; font-weight:600; font-size:0.80rem; width:100%; display:flex; justify-content:center; align-items:center; gap:8px; transition:background 0.15s, border-color 0.15s; font-family:inherit;"
-                                onmouseover="this.style.background='#222222'; this.style.borderColor='#555555'" onmouseout="this.style.background='#1a1a1a'; this.style.borderColor='rgba(255,255,255,0.10)'">
+                                style="background:#2d3139; border:1px solid var(--border-normal); color:#e8e8e8; padding:10px 14px; border-radius:6px; cursor:pointer; font-weight:600; font-size:0.82rem; width:100%; display:flex; justify-content:center; align-items:center; gap:8px; transition:background 0.15s, border-color 0.15s; font-family:inherit;"
+                                onmouseover="this.style.background='#383d47'; this.style.borderColor='var(--border-strong)'" onmouseout="this.style.background='#2d3139'; this.style.borderColor='var(--border-normal)'">
                             <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M1.75 2.5a.25.25 0 0 0-.25.25v10.5c0 .138.112.25.25.25h12.5a.25.25 0 0 0 .25-.25v-8.5h-4a2 2 0 0 1-2-2v-4H1.75ZM7.5 4.51V1.535a.25.25 0 0 1 .427-.177l4.683 4.683A.25.25 0 0 1 12.433 6.5H9.5a2 2 0 0 1-2-1.99ZM10.5 8h-5a.75.75 0 0 0 0 1.5h5a.75.75 0 0 0 0-1.5Zm-5 3.5h5a.75.75 0 0 0 0-1.5h-5a.75.75 0 0 0 0 1.5Z"/></svg>
                             Explorar Diffs y Archivos Afectados
                         </button>
@@ -2206,80 +2240,64 @@ def main() -> None:
 
     repo_path = Path(args.repo_path).resolve()
 
-    try:
-        repo = Repo(str(repo_path))
-    except InvalidGitRepositoryError:
-        print(f"[ERROR] La ruta '{repo_path}' no es un repositorio Git válido.")
-        sys.exit(1)
-    except NoSuchPathError:
-        print(f"[ERROR] La ruta '{repo_path}' no existe.")
-        sys.exit(1)
-    except Exception as e:
-        print(f"[ERROR] No se pudo abrir el repositorio: {e}")
-        sys.exit(1)
+    with Repo(str(repo_path)) as repo:
+        print(f"[INFO] Analizando repositorio: {repo_path}")
 
-    print(f"[INFO] Analizando repositorio: {repo_path}")
+        historial   = obtener_historial(repo)
+        tags        = obtener_tags(repo)
+        comparacion = comparar_tags(repo, tags)
 
-    historial   = obtener_historial(repo)
-    tags        = obtener_tags(repo)
-    comparacion = comparar_tags(repo, tags)
+        topologia = analizar_topologia_tags(repo, tags)
 
-    # ── Análisis topológico (nuevo motor)
-    topologia = analizar_topologia_tags(repo, tags)
+        busqueda = None
+        if args.search:
+            busqueda = ejecutar_busqueda(repo, args.search, topologia)
 
-    # ── Ejecutar búsqueda si fue solicitada mediante argumentos CLI
-    busqueda = None
-    if args.search:
-        busqueda = ejecutar_busqueda(repo, args.search, topologia)
+        reporte = generar_reporte(str(repo_path), historial, tags, comparacion, busqueda)
 
-    reporte = generar_reporte(str(repo_path), historial, tags, comparacion, busqueda)
+        print("[INFO] Generando grafo de tags y explorador de historial...")
+        grafo_html = generar_grafo_html(repo, tags, topologia, historial, busqueda)
 
-    # Generar grafo interactivo con topología real y búsqueda integrada
-    print("[INFO] Generando grafo de tags y explorador de historial...")
-    grafo_html = generar_grafo_html(repo, tags, topologia, historial, busqueda)
+        print(reporte)
 
-    print(reporte)
+        base_results_dir = Path(__file__).parent / "results"
+        project_name = repo_path.name
+        project_dir = base_results_dir / project_name
 
-    # ── Configurar estructura de carpetas de resultados ──
-    base_results_dir = Path(__file__).parent / "results"
-    project_name = repo_path.name
-    project_dir = base_results_dir / project_name
+        project_dir.mkdir(parents=True, exist_ok=True)
 
-    project_dir.mkdir(parents=True, exist_ok=True)
+        analisis_count = 1
+        while (project_dir / f"analisis_{analisis_count}").exists():
+            analisis_count += 1
 
-    analisis_count = 1
-    while (project_dir / f"analisis_{analisis_count}").exists():
-        analisis_count += 1
+        analysis_dir = project_dir / f"analisis_{analisis_count}"
+        analysis_dir.mkdir(parents=True, exist_ok=True)
 
-    analysis_dir = project_dir / f"analisis_{analisis_count}"
-    analysis_dir.mkdir(parents=True, exist_ok=True)
+        output_filename = Path(args.output).name if args.output else "reporte.txt"
 
-    # Determinar nombre del archivo de reporte
-    output_filename = Path(args.output).name if args.output else "reporte.txt"
+        output_path = analysis_dir / output_filename
+        grafo_path = analysis_dir / "reporte_grafo.html"
 
-    output_path = analysis_dir / output_filename
-    grafo_path = analysis_dir / "reporte_grafo.html"
+        with output_path.open("w", encoding="utf-8") as f:
+            f.write(reporte)
+        print(f"[INFO] Reporte guardado en: {output_path.resolve()}")
 
-    # Guardar reporte de texto
-    output_path.write_text(reporte, encoding="utf-8", errors="replace")
-    print(f"[INFO] Reporte guardado en: {output_path.resolve()}")
-
-    # ── GitSearch: inyectar panel de búsqueda avanzada (aditivo, sin riesgo) ──
-    if _GITSEARCH_OK:
-        try:
-            t_gs_inicio = datetime.now()
-            panel_busqueda = _gs_generar_panel(historial["commits"])
-            grafo_html = grafo_html.replace("<!-- GITSEARCH_PANEL -->", panel_busqueda)
-            delta_ms = int((datetime.now() - t_gs_inicio).total_seconds() * 1000)
-            print(f"[GitSearch] Panel de búsqueda inyectado en HTML ({delta_ms} ms).")
-        except Exception as _gs_err:
-            print(f"[WARN] GitSearch panel no pudo generarse: {_gs_err}")
+        if _GITSEARCH_OK:
+            try:
+                t_gs_inicio = datetime.now()
+                panel_busqueda = _gs_generar_panel(historial["commits"])
+                grafo_html = grafo_html.replace("<!-- GITSEARCH_PANEL -->", panel_busqueda)
+                delta_ms = int((datetime.now() - t_gs_inicio).total_seconds() * 1000)
+                print(f"[GitSearch] Panel de búsqueda inyectado en HTML ({delta_ms} ms).")
+            except Exception as _gs_err:
+                print(f"[WARN] GitSearch panel no pudo generarse: {_gs_err}")
+                grafo_html = grafo_html.replace("<!-- GITSEARCH_PANEL -->", "")
+        else:
             grafo_html = grafo_html.replace("<!-- GITSEARCH_PANEL -->", "")
-    else:
-        grafo_html = grafo_html.replace("<!-- GITSEARCH_PANEL -->", "")
 
-    grafo_path.write_text(grafo_html, encoding="utf-8", errors="replace")
-    print(f"[INFO] Grafo interactivo guardado en: {grafo_path.resolve()}")
+        with grafo_path.open("w", encoding="utf-8") as f:
+            f.write(grafo_html)
+        print(f"[INFO] Grafo interactivo guardado en: {grafo_path.resolve()}")
 
 
 if __name__ == "__main__":

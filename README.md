@@ -1,6 +1,4 @@
-<p align="center">
-  <img src="assets/logo.svg" width="220" alt="Git Tag Trace Logo">
-</p>
+![Git Tag Trace Logo](docs/screenshots/logo.png)
 
 <h1 align="center">Git Tag Trace</h1>
 

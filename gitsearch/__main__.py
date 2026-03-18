@@ -1113,7 +1113,7 @@ def generar_grafo_html(repo: Repo, tags: list[dict[str, Any]], topologia: dict[s
             flex: 1;
             background: var(--bg-color);
             scrollbar-width: thin;
-            scrollbar-color: #2a2a2a transparent;
+            scrollbar-color: var(--accent-dim) transparent;
             border-bottom-left-radius: var(--radius-lg);
             border-bottom-right-radius: var(--radius-lg);
         }
@@ -1157,11 +1157,11 @@ def generar_grafo_html(repo: Repo, tags: list[dict[str, Any]], topologia: dict[s
         <div style="font-size:0.72rem; color:var(--text-muted); margin-bottom:14px;">Historial de tags y commits</div>
         <div style="font-size:0.72rem; color:var(--text-secondary);">
             <div style="display:flex; align-items:center; gap:8px; margin-bottom:7px;">
-                <div style="width:8px; height:8px; border-radius:50%; background:#e0e0e0; flex-shrink:0;"></div>
+                <div style="width:8px; height:8px; border-radius:50%; background:var(--text-primary); flex-shrink:0;"></div>
                 Rama Principal
             </div>
             <div style="display:flex; align-items:center; gap:8px;">
-                <div style="width:8px; height:8px; border-radius:50%; background:#666666; flex-shrink:0;"></div>
+                <div style="width:8px; height:8px; border-radius:50%; background:var(--accent-dim); flex-shrink:0;"></div>
                 Rama Lateral
             </div>
         </div>
@@ -1353,14 +1353,19 @@ def generar_grafo_html(repo: Repo, tags: list[dict[str, Any]], topologia: dict[s
             container.style.cursor = 'pointer';
             if (params.node && params.node !== lastHighlightedNode) {
                 lastHoveredNode = params.node;
-                const t = THEMES_CONFIG[currentTheme];
                 const node = nodes.get(params.node);
                 if (node) {
-                    // Hover: slightly brighter background with contrasting text
-                    const hoverBg = currentTheme === 'dark' ? '#e8e8e8' : '#2a2a2a';
-                    const hoverBorder = currentTheme === 'dark' ? '#cccccc' : '#555555';
-                    const hoverText = currentTheme === 'dark' ? '#1a1a1f' : '#ffffff';
-                    nodes.update({ id: params.node, color: { background: hoverBg, border: hoverBorder }, font: { color: hoverText } });
+                    if (node.is_expanded_commit) {
+                        const hoverBg = currentTheme === 'dark' ? '#e8e8e8' : '#2a2a2a';
+                        const hoverBorder = currentTheme === 'dark' ? '#cccccc' : '#555555';
+                        const hoverText = currentTheme === 'dark' ? '#1a1a1f' : '#ffffff';
+                        nodes.update({ id: params.node, color: { background: hoverBg, border: hoverBorder }, font: { color: hoverText } });
+                    } else {
+                        const hoverBg = currentTheme === 'dark' ? '#ffffff' : '#000000';
+                        const hoverBorder = currentTheme === 'dark' ? '#ffffff' : '#000000';
+                        const hoverText = currentTheme === 'dark' ? '#ffffff' : '#000000';
+                        nodes.update({ id: params.node, color: { background: hoverBg, border: hoverBorder }, font: { color: hoverText } });
+                    }
                 }
             }
         });
@@ -1371,9 +1376,13 @@ def generar_grafo_html(repo: Repo, tags: list[dict[str, Any]], topologia: dict[s
                 const node = nodes.get(params.node);
                 if (node) {
                     // Restore original colors
-                    const restoreBg = node.is_main ? t.mainBg : t.sideBg;
-                    const restoreBorder = node.is_main ? t.mainBorder : t.sideBorder;
-                    nodes.update({ id: params.node, color: { background: restoreBg, border: restoreBorder }, font: { color: t.font } });
+                    if (node.is_expanded_commit) {
+                        nodes.update({ id: params.node, color: { background: currentTheme === 'dark' ? '#2a2a2a' : '#dfdbd4', border: currentTheme === 'dark' ? '#555555' : '#b1b6bd' }, font: { color: t.font } });
+                    } else {
+                        const restoreBg = node.is_main ? t.mainBg : t.sideBg;
+                        const restoreBorder = node.is_main ? t.mainBorder : t.sideBorder;
+                        nodes.update({ id: params.node, color: { background: restoreBg, border: restoreBorder }, font: { color: t.font } });
+                    }
                 }
             }
             lastHoveredNode = null;
@@ -1739,8 +1748,8 @@ def generar_grafo_html(repo: Repo, tags: list[dict[str, Any]], topologia: dict[s
             const tt = document.createElement('div');
             tt.textContent = 'Copiado';
             Object.assign(tt.style, {
-                position: 'fixed', background: '#1a1a1a', border: '1px solid rgba(255,255,255,0.15)',
-                color: '#e0e0e0', padding: '4px 10px', borderRadius: '4px',
+                position: 'fixed', background: 'var(--bg-surface)', border: '1px solid var(--border-strong)',
+                color: 'var(--text-primary)', padding: '4px 10px', borderRadius: '4px',
                 fontSize: '11px', fontFamily: 'Inter, sans-serif', fontWeight: '600',
                 letterSpacing: '0.03em', zIndex: '10000',
                 left: (event.clientX + 10) + 'px', top: (event.clientY + 10) + 'px',
@@ -1777,15 +1786,15 @@ def generar_grafo_html(repo: Repo, tags: list[dict[str, Any]], topologia: dict[s
             
             const pContainer = document.getElementById('modal-parents-container');
             if (commit.parents && commit.parents.length > 0) {
-                // [VISUAL ONLY] Padres con estilos monocromáticos
+                // [VISUAL ONLY] Padres con estilos coherentes
                 pContainer.innerHTML = commit.parents.map(ph => `
                     <div style="display:flex; align-items:center;">
-                        <span style="font-family:'JetBrains Mono',monospace; font-size:0.80rem; color:#b0b0b0;
-                              background:#1a1a1a; border:1px solid rgba(255,255,255,0.15); border-radius:4px;
+                        <span style="font-family:'JetBrains Mono',monospace; font-size:0.80rem; color:var(--text-secondary);
+                              background:var(--bg-color); border:1px solid var(--border-normal); border-radius:4px;
                               padding:3px 8px; cursor:pointer; transition:color 0.15s, background 0.15s;"
-                              onmouseover="this.style.background='#252525'; this.style.color='#d0d0d0'"
-                              onmouseout="this.style.background='#1a1a1a'; this.style.color='#b0b0b0'"
-                              onclick="hideCommitModal(); if(typeof gsNavParent==='function'){gsNavParent('${ph}');}else{selectCommitByHash('${ph}');}">↑ ${ph}</span>
+                              onmouseover="this.style.background='var(--bg-hover)'; this.style.color='var(--text-primary)'"
+                              onmouseout="this.style.background='var(--bg-color)'; this.style.color='var(--text-secondary)'"
+                              onclick="savedCameraState = null; hideCommitModal(); if(typeof gsNavParent==='function'){gsNavParent('${ph}');}else{selectCommitByHash('${ph}');}">↑ ${ph}</span>
                         ${getCopyBtnHtml(ph)}
                     </div>
                 `).join('');
@@ -1826,9 +1835,22 @@ def generar_grafo_html(repo: Repo, tags: list[dict[str, Any]], topologia: dict[s
                     }
                 }
             }
-            // Highlight with contrasting colors - white background needs dark text
-            const highlightTextColor = currentTheme === 'dark' ? '#1a1a1f' : '#ffffff';
-            nodes.update({ id: nodeId, color: { background: currentTheme === 'dark' ? '#ffffff' : '#000000', border: currentTheme === 'dark' ? '#ffffff' : '#000000' }, font: { color: highlightTextColor } });
+            
+            const node = nodes.get(nodeId);
+            if (node) {
+                if (node.is_expanded_commit) {
+                    const highlightBg = currentTheme === 'dark' ? '#ffffff' : '#000000';
+                    const highlightBorder = currentTheme === 'dark' ? '#ffffff' : '#000000';
+                    const highlightText = currentTheme === 'dark' ? '#1a1a1f' : '#ffffff';
+                    nodes.update({ id: nodeId, color: { background: highlightBg, border: highlightBorder }, font: { color: highlightText } });
+                } else {
+                    const highlightBg = currentTheme === 'dark' ? '#ffffff' : '#000000';
+                    const highlightBorder = currentTheme === 'dark' ? '#ffffff' : '#000000';
+                    const highlightText = currentTheme === 'dark' ? '#ffffff' : '#000000';
+                    nodes.update({ id: nodeId, color: { background: highlightBg, border: highlightBorder }, font: { color: highlightText } });
+                }
+            }
+            
             lastHighlightedNode = nodeId;
         }
 
@@ -1860,9 +1882,9 @@ def generar_grafo_html(repo: Repo, tags: list[dict[str, Any]], topologia: dict[s
                 const old = nodes.get(lastHighlightedNode);
                 if (old) {
                     if (old.is_expanded_commit) {
-                        nodes.update({ id: lastHighlightedNode, color: { background: currentTheme === 'dark' ? '#2a2a2a' : '#dfdbd4', border: currentTheme === 'dark' ? '#555555' : '#b1b6bd' } });
+                        nodes.update({ id: lastHighlightedNode, color: { background: currentTheme === 'dark' ? '#2a2a2a' : '#dfdbd4', border: currentTheme === 'dark' ? '#555555' : '#b1b6bd' }, font: { color: t.font } });
                     } else {
-                        nodes.update({ id: lastHighlightedNode, color: { background: old.is_main ? t.mainBg : t.sideBg, border: old.is_main ? t.mainBorder : t.sideBorder } });
+                        nodes.update({ id: lastHighlightedNode, color: { background: old.is_main ? t.mainBg : t.sideBg, border: old.is_main ? t.mainBorder : t.sideBorder }, font: { color: t.font } });
                     }
                 }
                 lastHighlightedNode = null;
@@ -1911,16 +1933,18 @@ def generar_grafo_html(repo: Repo, tags: list[dict[str, Any]], topologia: dict[s
                     </div>
 
                     <div class="section-title">Commit Padre</div>
-                    <!-- [VISUAL] Commit parent links monocromáticos -->
+                    <!-- [VISUAL] Commit parent links -->
                     <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:20px;">
                         ${(selectedCommit.parents && selectedCommit.parents.length > 0)
                             ? selectedCommit.parents.map((ph, i) => {
                                 const pFull = (selectedCommit.parents[i] || ph);
                                 return `<div style="display:flex; align-items:center;">
-                                    <span style="font-family:'JetBrains Mono',monospace; font-size:0.72rem; color:#aaaaaa;
-                                    background:#1a1a1a; border:1px solid #333333;
-                                    border-radius:4px; padding:3px 8px; cursor:pointer;"
-                                    onclick="gsNavParent && gsNavParent('${ph}')"
+                                    <span style="font-family:'JetBrains Mono',monospace; font-size:0.72rem; color:var(--text-secondary);
+                                    background:var(--bg-color); border:1px solid var(--border-normal);
+                                    border-radius:4px; padding:3px 8px; cursor:pointer; transition:color 0.15s, background 0.15s;"
+                                    onmouseover="this.style.background='var(--bg-hover)'; this.style.color='var(--text-primary)'"
+                                    onmouseout="this.style.background='var(--bg-color)'; this.style.color='var(--text-secondary)'"
+                                    onclick="savedCameraState = null; selectCommitByHash('${ph}')"
                                     title="Ir al commit padre ${ph}">↑ ${ph}</span>
                                     ${getCopyBtnHtml(ph)}
                                     </div>`;
@@ -1929,15 +1953,15 @@ def generar_grafo_html(repo: Repo, tags: list[dict[str, Any]], topologia: dict[s
                         }
                     </div>
 
-                    <!-- [VISUAL] Sección analizar diff — monocromática -->
-                    <div style="background:#181a1f; padding:14px 16px; border-radius:8px; border:1px solid var(--border-subtle);">
+                    <!-- [VISUAL] Sección analizar diff -->
+                    <div style="background:var(--bg-raised); padding:14px 16px; border-radius:8px; border:1px solid var(--border-subtle);">
                         <div class="section-title" style="margin-top:0;">Analizar Cambios Reales</div>
                         <div style="font-size:0.78rem; color:var(--text-secondary); margin-bottom:12px; line-height:1.5;">
                             Visualice los archivos modificados, adiciones y supresiones de este commit.
                         </div>
                         <button onclick="showCommitModal('${selectedCommit.full_hash}')"
-                                style="background:#2d3139; border:1px solid var(--border-normal); color:#e8e8e8; padding:10px 14px; border-radius:6px; cursor:pointer; font-weight:600; font-size:0.82rem; width:100%; display:flex; justify-content:center; align-items:center; gap:8px; transition:background 0.15s, border-color 0.15s; font-family:inherit;"
-                                onmouseover="this.style.background='#383d47'; this.style.borderColor='var(--border-strong)'" onmouseout="this.style.background='#2d3139'; this.style.borderColor='var(--border-normal)'">
+                                style="background:var(--bg-hover); border:1px solid var(--border-normal); color:var(--text-primary); padding:10px 14px; border-radius:6px; cursor:pointer; font-weight:600; font-size:0.82rem; width:100%; display:flex; justify-content:center; align-items:center; gap:8px; transition:background 0.15s, border-color 0.15s; font-family:inherit;"
+                                onmouseover="this.style.background='var(--bg-surface)'; this.style.borderColor='var(--border-strong)'" onmouseout="this.style.background='var(--bg-hover)'; this.style.borderColor='var(--border-normal)'">
                             <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M1.75 2.5a.25.25 0 0 0-.25.25v10.5c0 .138.112.25.25.25h12.5a.25.25 0 0 0 .25-.25v-8.5h-4a2 2 0 0 1-2-2v-4H1.75ZM7.5 4.51V1.535a.25.25 0 0 1 .427-.177l4.683 4.683A.25.25 0 0 1 12.433 6.5H9.5a2 2 0 0 1-2-1.99ZM10.5 8h-5a.75.75 0 0 0 0 1.5h5a.75.75 0 0 0 0-1.5Zm-5 3.5h5a.75.75 0 0 0 0-1.5h-5a.75.75 0 0 0 0 1.5Z"/></svg>
                             Explorar Diffs y Archivos Afectados
                         </button>

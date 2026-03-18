@@ -561,15 +561,53 @@ def generar_grafo_html(repo: Repo, tags: list[dict[str, Any]], topologia: dict[s
 
     shas_ordenados = sorted(tags_by_sha.keys(), key=lambda s: tags_by_sha[s][0].get("fecha_iso") or "")
 
-    # Agrega aquí los prefijos de tus tags que quieras recortar del label visual.
-    # Ejemplo: ["mi_proyecto_prod_", "release_"] → "mi_proyecto_prod_v1.2" → "v1.2"
+    import re
+    # 1. Configurar y limpiar prefijos explícitos del .env (para evitar whitespaces o comillas)
+    # Si un tag empieza con alguno de estos, se cortará por completo.
     env_prefixes = os.getenv("TAG_PREFIXES", "")
-    PREFIJOS_LIMPIAR: list[str] = [p.strip() for p in env_prefixes.split(",") if p.strip()]
+    PREFIJOS_LIMPIAR: list[str] = [
+        p.strip().strip("'\"") for p in env_prefixes.split(",") if p.strip().strip("'\"")
+    ]
+    # Ordenar de mayor a menor longitud para que el match sea exacto (greedy)
+    PREFIJOS_LIMPIAR.sort(key=len, reverse=True)
+
+    # 2. Detectar automáticamente prefijos comunes compartidos para hacer resúmenes (ej: vtr-250812)
+    # Busca un patrón tipo "palabra-palabra-", "palabra_palabra_", etc.
+    prefix_pattern = re.compile(r'^([a-zA-Z0-9]+(?:[-_][a-zA-Z0-9]+)*[-_])')
+    prefix_counts: dict[str, int] = Counter()
+    tag_to_prefix: dict[str, str] = {}
+
+    for t in tags:
+        nombre_tag = t.get("nombre", "")
+        m = prefix_pattern.search(nombre_tag)
+        if m:
+            pfx = m.group(1)
+            # Validar que el prefijo no es el tag completo
+            if len(pfx) < len(nombre_tag):
+                prefix_counts[pfx] += 1
+                tag_to_prefix[nombre_tag] = pfx
+
+    def generar_acronimo(pfx: str) -> str:
+        """Genera un acrónimo del prefijo (ej: 'v-tag-release-' -> 'vtr-')"""
+        sep = '-' if '-' in pfx else '_'
+        partes = re.split(r'[-_]', pfx)
+        acronimo = "".join(parte[0].lower() for parte in partes if parte)
+        return acronimo + sep
 
     def limpiar_label(nombre: str) -> str:
+        # A. Prefijos explícitos (.env): se eliminan completamente de forma case-insensitive
         for pfx in PREFIJOS_LIMPIAR:
-            if nombre.startswith(pfx):
+            if nombre.lower().startswith(pfx.lower()):
+                # Mantener el case original del resto de la cadena
                 return nombre[len(pfx):]
+
+        # B. Detección automática de prefijo común (más de 1 tag lo usa)
+        pfx = tag_to_prefix.get(nombre)
+        if pfx and prefix_counts.get(pfx, 0) > 1:
+            acronimo = generar_acronimo(pfx)
+            # Reemplazar la parte del prefijo con el acrónimo
+            return acronimo + nombre[len(pfx):]
+
         return nombre
 
     RAMAS_PRINCIPALES = {"main", "master", "develop", "trunk"}
@@ -2278,7 +2316,7 @@ def main() -> None:
         output_path = analysis_dir / output_filename
         grafo_path = analysis_dir / "reporte_grafo.html"
 
-        with output_path.open("w", encoding="utf-8") as f:
+        with output_path.open("w", encoding="utf-8", errors="replace") as f:
             f.write(reporte)
         print(f"[INFO] Reporte guardado en: {output_path.resolve()}")
 
@@ -2295,7 +2333,7 @@ def main() -> None:
         else:
             grafo_html = grafo_html.replace("<!-- GITSEARCH_PANEL -->", "")
 
-        with grafo_path.open("w", encoding="utf-8") as f:
+        with grafo_path.open("w", encoding="utf-8", errors="replace") as f:
             f.write(grafo_html)
         print(f"[INFO] Grafo interactivo guardado en: {grafo_path.resolve()}")
 

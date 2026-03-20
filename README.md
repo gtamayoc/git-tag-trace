@@ -1,4 +1,6 @@
-![Git Tag Trace Logo](docs/screenshots/logo.png)
+<p align="center">
+  <img src="docs/screenshots/logo.png" alt="Git Tag Trace Logo">
+</p>
 
 <h1 align="center">Git Tag Trace</h1>
 

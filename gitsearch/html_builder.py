@@ -42,7 +42,7 @@ def generar_panel_busqueda(commits_data: list[dict[str, Any]]) -> str:
   #gs-toggle-btn {{
     position: absolute;
     top: 60px;
-    right: 530px;
+    right: 20px;
     z-index: 200;
     background: var(--bg-raised);
     border: 1px solid var(--border-normal);
@@ -57,8 +57,12 @@ def generar_panel_busqueda(commits_data: list[dict[str, Any]]) -> str:
     gap: 6px;
     backdrop-filter: blur(16px);
     font-family: 'Inter', sans-serif;
-    transition: background 0.15s, border-color 0.15s, color 0.15s;
+    transition: background 0.15s, border-color 0.15s, color 0.15s, top 0.32s cubic-bezier(0.4, 0, 0.2, 1);
     letter-spacing: 0.01em;
+  }}
+  /* When side panel is open, move button down to avoid X */
+  body:has(.side-panel.open) #gs-toggle-btn {{
+    top: 200px;
   }}
   #gs-toggle-btn:hover {{
     background: var(--bg-hover);
@@ -372,10 +376,8 @@ let gsActiveItemEl = null;
 // ── Abrir / cerrar panel ──────────────────────────────
 function gsTogglePanel() {{
   const panel = document.getElementById('gs-panel');
-  const btn   = document.getElementById('gs-toggle-btn');
   const isOpen = panel.classList.contains('gs-open');
   panel.classList.toggle('gs-open');
-  btn.style.right = isOpen ? '530px' : '20px';
   if (!isOpen) {{
     setTimeout(() => document.getElementById('gs-text').focus(), 350);
   }}

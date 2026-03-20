@@ -23,18 +23,31 @@ if %ERRORLEVEL% neq 0 (
 echo [OK] Python encontrado.
 
 :: -- Verificar/Install uv
-python -m pip show uv >nul 2>&1
+where uv >nul 2>&1
 if %ERRORLEVEL% neq 0 (
-    echo [INFO] Instalando uv...
-    pip install --quiet uv
+    python -m uv --version >nul 2>&1
     if %ERRORLEVEL% neq 0 (
-        echo [ERROR] No se pudo instalar uv.
-        echo.
-        echo Presiona una tecla para salir...
-        pause >nul
-        exit /b 1
+        echo [INFO] Instalando uv...
+        python -m pip install --quiet uv >nul 2>&1
+        if %ERRORLEVEL% neq 0 (
+            echo [INFO] Pip no disponible o falló. Intentando instalador oficial...
+            powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex" >nul 2>&1
+        )
+        
+        :: Re-verificar tras intento de instalación
+        where uv >nul 2>&1
+        if !ERRORLEVEL! neq 0 (
+            python -m uv --version >nul 2>&1
+            if !ERRORLEVEL! neq 0 (
+                echo [ERROR] No se pudo instalar uv.
+                echo.
+                echo Presiona una tecla para salir...
+                pause >nul
+                exit /b 1
+            )
+        )
+        echo [OK] uv instalado correctamente.
     )
-    echo [OK] uv instalado.
 )
 echo [OK] uv disponible.
 

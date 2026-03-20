@@ -17,7 +17,9 @@ from .filters import FiltroInvalido, validar_y_normalizar
 from .strategy import seleccionar_estrategia
 
 
-def buscar(repo: Repo, params: dict[str, Any], topologia: dict[str, Any] | None = None) -> dict[str, Any]:
+def buscar(
+    repo: Repo, params: dict[str, Any], topologia: dict[str, Any] | None = None
+) -> dict[str, Any]:
     """
     Busca commits en el repositorio según los parámetros dados.
 
@@ -59,14 +61,14 @@ def buscar(repo: Repo, params: dict[str, Any], topologia: dict[str, Any] | None 
             "modo": "error",
             "descripcion": f"Parámetro inválido: {e}",
             "total": 0,
-            "resultados": []
+            "resultados": [],
         }
 
     estrategia = seleccionar_estrategia(p)
-    modo = estrategia["modo"]
-    flags = estrategia["flags_base"] + estrategia["flags_contenido"]
+    modo = estrategia.modo
+    flags = estrategia.flags_base + estrategia.flags_contenido
 
-    print(f"[GitSearch] {estrategia['descripcion']}")
+    print(f"[GitSearch] {estrategia.descripcion}")
 
     shas_encontrados: dict[str, str] = {}
 
@@ -74,17 +76,22 @@ def buscar(repo: Repo, params: dict[str, Any], topologia: dict[str, Any] | None 
         return {
             "criterio": "",
             "modo": modo,
-            "descripcion": estrategia["descripcion"],
+            "descripcion": estrategia.descripcion,
             "total": 0,
-            "resultados": []
+            "resultados": [],
         }
 
     try:
         raw = repo.git.log(*flags)
         for linea in raw.splitlines():
             linea = linea.strip()
-            if linea and len(linea) == 40 and all(c in "0123456789abcdefABCDEF" for c in linea) and linea not in shas_encontrados:
-                shas_encontrados[linea] = estrategia["descripcion"]
+            if (
+                linea
+                and len(linea) == 40
+                and all(c in "0123456789abcdefABCDEF" for c in linea)
+                and linea not in shas_encontrados
+            ):
+                shas_encontrados[linea] = estrategia.descripcion
     except Exception as e:
         print(f"[GitSearch] Error en git log: {e}")
 
@@ -150,20 +157,22 @@ def buscar(repo: Repo, params: dict[str, Any], topologia: dict[str, Any] | None 
             parents_corto = [p.hexsha[:7] for p in c.parents]
             parents_full = [p.hexsha for p in c.parents]
 
-            resultados.append({
-                "hash": hash_corto,
-                "full_hash": hexsha,
-                "tipo": tipo,
-                "mensaje": message.splitlines()[0][:100] if message else "Sin mensaje",
-                "mensaje_full": message.strip() if message else "",
-                "autor": autor,
-                "fecha": from_timestamp(committed_date).strftime(strftime_fmt),
-                "tags": tags_del_commit,
-                "archivos": sorted(set(archivos)),
-                "parents": parents_corto,
-                "parent_full": parents_full,
-                "tag_sha": tag_sha,
-            })
+            resultados.append(
+                {
+                    "hash": hash_corto,
+                    "full_hash": hexsha,
+                    "tipo": tipo,
+                    "mensaje": message.splitlines()[0][:100] if message else "Sin mensaje",
+                    "mensaje_full": message.strip() if message else "",
+                    "autor": autor,
+                    "fecha": from_timestamp(committed_date).strftime(strftime_fmt),
+                    "tags": tags_del_commit,
+                    "archivos": sorted(set(archivos)),
+                    "parents": parents_corto,
+                    "parent_full": parents_full,
+                    "tag_sha": tag_sha,
+                }
+            )
         except Exception:
             continue
 
@@ -173,7 +182,7 @@ def buscar(repo: Repo, params: dict[str, Any], topologia: dict[str, Any] | None 
     return {
         "criterio": p["texto"],
         "modo": modo,
-        "descripcion": estrategia["descripcion"],
+        "descripcion": estrategia.descripcion,
         "total": len(resultados),
         "resultados": resultados,
     }

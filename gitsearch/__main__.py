@@ -636,6 +636,7 @@ def generar_grafo_html(
             return base + 3.0
         return base
 
+
     import re
 
     # 1. Configurar y limpiar prefijos explícitos del .env (para evitar whitespaces o comillas)
@@ -736,6 +737,7 @@ def generar_grafo_html(
                 "stats": stats,
                 "value": i + 1,
                 "size": calcular_tamano_tag(tags_en_sha),
+
             }
         )
 
@@ -1376,6 +1378,7 @@ def generar_grafo_html(
                     ...n, shape: 'dot', size: nodeSize, borderWidth: n.is_main ? 2.5 : 2,
                     color: { background: n.is_main ? t.mainBg : t.sideBg, border: n.is_main ? t.mainBorder : t.sideBorder, highlight: { background: t.mainBorder, border: t.mainBorder } },
                     font: { color: t.font, face: 'Inter', size: Math.max(10, Math.min(13, 9 + Math.floor(nodeSize / 3))) },
+
                     x: pos ? pos.x : undefined,
                     y: pos ? pos.y : undefined
                 };
@@ -1389,6 +1392,7 @@ def generar_grafo_html(
                     ...e, color: { color: t.edge, highlight: t.edgeHi },
                     dashes: e.is_parallel ? [4, 4] : false, width: getEdgeWidth(e.n_commits || 0),
                     smooth: { enabled: true, type: smoothType, forceDirection: 'vertical', roundness: isMergeEdge ? 0.3 : 0.5 },
+
                     font: { 
                         align: 'horizontal', 
                         size: 10, 
@@ -2562,6 +2566,9 @@ def main() -> None:
     args = parser.parse_args()
 
     repo_path = Path(args.repo_path).resolve()
+    if not repo_path.exists():
+        print(f"[ERROR] La ruta no existe: {repo_path}")
+        sys.exit(1)
 
     base_results_dir = Path(__file__).parent / "results"
     project_name = repo_path.name

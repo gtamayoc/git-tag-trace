@@ -88,5 +88,4 @@ error-on-warning = true
 python-version = "3.11"
 
 [tool.ty.rules]
-possibly-unresolved-reference = "warn"
 unused-ignore-comment = "warn"

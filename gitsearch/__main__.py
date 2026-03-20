@@ -4,6 +4,8 @@ Analizador Técnico Offline de Repositorio Git
 Uso: python main.py <ruta_repositorio> [--output archivo.md]
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import os
@@ -12,7 +14,10 @@ from collections import Counter
 from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from git import Commit, Repo
 
 try:
     from dotenv import load_dotenv
@@ -37,14 +42,15 @@ from gitsearch.incremental import (
     ruta_reporte_md,
 )
 
-# ── GitSearch: módulo complementario de búsqueda avanzada (aditivo) ──────────
+_GITSEARCH_OK: bool = False
+_gs_generar_panel: Any = None
+
 try:
     from gitsearch.html_builder import generar_panel_busqueda as _gs_generar_panel
 
     _GITSEARCH_OK = True
 except ImportError:
-    _GITSEARCH_OK = False
-    _gs_generar_panel = None  # type: ignore[assignment]
+    pass
 
 
 # ──────────────────────────────────────────────
@@ -636,7 +642,6 @@ def generar_grafo_html(
             return base + 3.0
         return base
 
-
     import re
 
     # 1. Configurar y limpiar prefijos explícitos del .env (para evitar whitespaces o comillas)
@@ -737,7 +742,6 @@ def generar_grafo_html(
                 "stats": stats,
                 "value": i + 1,
                 "size": calcular_tamano_tag(tags_en_sha),
-
             }
         )
 
@@ -2619,7 +2623,7 @@ def main() -> None:
             "comparacion": comparacion,
         }
 
-        if _GITSEARCH_OK:
+        if _GITSEARCH_OK and _gs_generar_panel is not None:
             try:
                 t_gs_inicio = datetime.now()
                 panel_busqueda = _gs_generar_panel(commits_data)

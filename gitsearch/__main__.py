@@ -16,19 +16,31 @@ from typing import Any
 
 try:
     from dotenv import load_dotenv
+
     load_dotenv()
 except ImportError:
     pass
 
 try:
-    from git import Commit, InvalidGitRepositoryError, NoSuchPathError, Repo
+    from git import Commit, Repo
 except ImportError:
     print("[ERROR] GitPython no está instalado. Ejecuta start.bat para configurar el entorno.")
     sys.exit(1)
 
+from gitsearch.incremental import (
+    cargar_estado,
+    detectar_cambios,
+    generar_info_incremental,
+    guardar_estado,
+    ruta_data_json,
+    ruta_reporte_html,
+    ruta_reporte_md,
+)
+
 # ── GitSearch: módulo complementario de búsqueda avanzada (aditivo) ──────────
 try:
     from gitsearch.html_builder import generar_panel_busqueda as _gs_generar_panel
+
     _GITSEARCH_OK = True
 except ImportError:
     _GITSEARCH_OK = False
@@ -39,11 +51,12 @@ except ImportError:
 # SECCIÓN 1 — HISTORIAL
 # ──────────────────────────────────────────────
 
+
 def obtener_historial(repo: Repo) -> dict[str, Any]:
     STASH_PREFIXES = (
-        "On ",          # "On main: ..."
-        "index on ",    # "index on main: ..."
-        "WIP on ",      # "WIP on main: ..."
+        "On ",  # "On main: ..."
+        "index on ",  # "index on main: ..."
+        "WIP on ",  # "WIP on main: ..."
         "untracked files on ",
     )
 
@@ -89,22 +102,29 @@ def obtener_historial(repo: Repo) -> dict[str, Any]:
 
         diff_preview = ""
         try:
-            diff_preview = git_show(commit_hexsha, "-p", "--stat", "--no-color", "--format=", max_count=1)
+            diff_preview = git_show(
+                commit_hexsha, "-p", "--stat", "--no-color", "--format=", max_count=1
+            )
             if len(diff_preview) > 6000:
-                diff_preview = diff_preview[:6000] + "\n\n... (diff truncado por tamaño, mostrando primeros 6000 caracteres) ..."
+                diff_preview = (
+                    diff_preview[:6000]
+                    + "\n\n... (diff truncado por tamaño, mostrando primeros 6000 caracteres) ..."
+                )
         except Exception:
             diff_preview = "(Error cargando diff)"
 
-        lista.append({
-            "hash": commit_hexsha[:7],
-            "full_hash": commit_hexsha,
-            "autor": autor_name,
-            "fecha": from_timestamp(committed_date).strftime(strftime_fmt),
-            "mensaje": first_line,
-            "mensaje_full": c.message.strip(),
-            "parents": parents_hashes,
-            "diff": diff_preview
-        })
+        lista.append(
+            {
+                "hash": commit_hexsha[:7],
+                "full_hash": commit_hexsha,
+                "autor": autor_name,
+                "fecha": from_timestamp(committed_date).strftime(strftime_fmt),
+                "mensaje": first_line,
+                "mensaje_full": c.message.strip(),
+                "parents": parents_hashes,
+                "diff": diff_preview,
+            }
+        )
 
     return {
         "commits": lista,
@@ -119,6 +139,7 @@ def obtener_historial(repo: Repo) -> dict[str, Any]:
 # SECCIÓN 2 — TAGS Y VERSIONADO
 # ──────────────────────────────────────────────
 
+
 def obtener_tags(repo: Repo) -> list[dict[str, Any]]:
     """Obtiene todos los tags del repositorio con su metadata."""
     tags = []
@@ -129,33 +150,41 @@ def obtener_tags(repo: Repo) -> list[dict[str, Any]]:
             if tag.tag:  # tag anotado
                 commit = tag.tag.object
                 fecha = datetime.fromtimestamp(tag.tag.tagged_date).strftime("%Y-%m-%d")
-                fecha_iso = datetime.fromtimestamp(tag.tag.tagged_date).strftime("%Y-%m-%d %H:%M:%S")
+                fecha_iso = datetime.fromtimestamp(tag.tag.tagged_date).strftime(
+                    "%Y-%m-%d %H:%M:%S"
+                )
                 autor = tag.tag.tagger.name
             else:  # tag ligero
                 commit = tag.commit
                 fecha = datetime.fromtimestamp(commit.committed_date).strftime("%Y-%m-%d")
-                fecha_iso = datetime.fromtimestamp(commit.committed_date).strftime("%Y-%m-%d %H:%M:%S")
+                fecha_iso = datetime.fromtimestamp(commit.committed_date).strftime(
+                    "%Y-%m-%d %H:%M:%S"
+                )
                 autor = commit.author.name
 
-            tags.append({
-                "nombre": tag.name,
-                "fecha": fecha,
-                "fecha_iso": fecha_iso,
-                "autor": autor,
-                "hash": commit.hexsha[:7] if hasattr(commit, 'hexsha') else "N/A",
-                "hash_completo": commit.hexsha if hasattr(commit, 'hexsha') else "N/A",
-                "es_semver": tag.name.startswith("v") and tag.name[1:2].isdigit(),
-            })
+            tags.append(
+                {
+                    "nombre": tag.name,
+                    "fecha": fecha,
+                    "fecha_iso": fecha_iso,
+                    "autor": autor,
+                    "hash": commit.hexsha[:7] if hasattr(commit, "hexsha") else "N/A",
+                    "hash_completo": commit.hexsha if hasattr(commit, "hexsha") else "N/A",
+                    "es_semver": tag.name.startswith("v") and tag.name[1:2].isdigit(),
+                }
+            )
         except Exception:
-            tags.append({
-                "nombre": tag.name,
-                "fecha": "N/A",
-                "fecha_iso": "",
-                "autor": "N/A",
-                "hash": "N/A",
-                "hash_completo": "N/A",
-                "es_semver": False,
-            })
+            tags.append(
+                {
+                    "nombre": tag.name,
+                    "fecha": "N/A",
+                    "fecha_iso": "",
+                    "autor": "N/A",
+                    "hash": "N/A",
+                    "hash_completo": "N/A",
+                    "es_semver": False,
+                }
+            )
 
     return sorted(tags, key=lambda t: t["fecha_iso"] if t["fecha_iso"] else t["fecha"])
 
@@ -164,19 +193,20 @@ def obtener_tags(repo: Repo) -> list[dict[str, Any]]:
 # SECCIÓN 3 — ANÁLISIS TOPOLÓGICO DEL GRAFO GIT
 # ──────────────────────────────────────────────
 
+
 def comparar_tags(repo: Repo, tags: list[dict[str, Any]]) -> dict[str, Any] | None:
     """Compara los dos últimos tags (topológicamente) y retorna diferencias."""
     if len(tags) < 2:
         return None
 
     tag_anterior = tags[-2]["nombre"]
-    tag_actual   = tags[-1]["nombre"]
+    tag_actual = tags[-1]["nombre"]
 
     try:
-        c_actual   = repo.commit(tags[-1]["hash_completo"])
+        c_actual = repo.commit(tags[-1]["hash_completo"])
         c_anterior = repo.commit(tags[-2]["hash_completo"])
-        bases      = repo.merge_base(c_anterior, c_actual)
-        base       = bases[0] if bases else c_anterior
+        bases = repo.merge_base(c_anterior, c_actual)
+        base = bases[0] if bases else c_anterior
 
         # Commits exclusivos de tag_actual respecto al punto de divergencia
         commits_entre = list(repo.iter_commits(f"{base.hexsha}..{c_actual.hexsha}", max_count=5000))
@@ -195,9 +225,9 @@ def comparar_tags(repo: Repo, tags: list[dict[str, Any]]) -> dict[str, Any] | No
 
         lista_commits = [
             {
-                "hash":    c.hexsha[:7],
-                "autor":   c.author.name,
-                "fecha":   datetime.fromtimestamp(c.committed_date).strftime("%Y-%m-%d %H:%M"),
+                "hash": c.hexsha[:7],
+                "autor": c.author.name,
+                "fecha": datetime.fromtimestamp(c.committed_date).strftime("%Y-%m-%d %H:%M"),
                 "mensaje": c.message.strip().splitlines()[0][:80],
             }
             for c in commits_entre
@@ -205,12 +235,12 @@ def comparar_tags(repo: Repo, tags: list[dict[str, Any]]) -> dict[str, Any] | No
 
         return {
             "tag_anterior": tag_anterior,
-            "tag_actual":   tag_actual,
-            "total_commits":      len(commits_entre),
-            "autores":            autores,
+            "tag_actual": tag_actual,
+            "total_commits": len(commits_entre),
+            "autores": autores,
             "archivos_modificados": sorted(archivos_modificados),
-            "total_archivos":     len(archivos_modificados),
-            "commits":            lista_commits,
+            "total_archivos": len(archivos_modificados),
+            "commits": lista_commits,
         }
 
     except Exception as e:
@@ -218,6 +248,7 @@ def comparar_tags(repo: Repo, tags: list[dict[str, Any]]) -> dict[str, Any] | No
 
 
 # ── 3a. Construcción del mapa completo de commits (DAG) ──────────────────────
+
 
 def construir_mapa_commits(repo: Repo) -> dict[str, Any]:
     """
@@ -260,7 +291,10 @@ def construir_mapa_commits(repo: Repo) -> dict[str, Any]:
 
 # ── 3b. Identificar ramas que contienen cada tag ─────────────────────────────
 
-def identificar_ramas_de_tag(repo: Repo, commit_sha: str, sha_a_ramas: dict[str, list[str]] | None = None) -> list[str]:
+
+def identificar_ramas_de_tag(
+    repo: Repo, commit_sha: str, sha_a_ramas: dict[str, list[str]] | None = None
+) -> list[str]:
     """
     Devuelve lista de nombres de ramas en las que el commit del tag está presente.
     Si se pasa sha_a_ramas (un dict pre-calculado sha→[ramas]), se usa ese;
@@ -277,7 +311,7 @@ def identificar_ramas_de_tag(repo: Repo, commit_sha: str, sha_a_ramas: dict[str,
             nombre = linea.strip().lstrip("* ").strip()
             if nombre and "HEAD detached" not in nombre:
                 if nombre.startswith("remotes/"):
-                    nombre = nombre[len("remotes/"):]
+                    nombre = nombre[len("remotes/") :]
                 ramas.append(nombre)
     except Exception:
         pass
@@ -298,21 +332,21 @@ def _construir_sha_a_ramas(repo: Repo) -> dict[str, list[str]]:
         idx_sep = line.index(" ") if " " in line else -1
         if idx_sep < 0:
             continue
-        sha  = line[:idx_sep].strip()
-        deco = line[idx_sep + 1:].strip()
+        sha = line[:idx_sep].strip()
+        deco = line[idx_sep + 1 :].strip()
         if not deco:
             continue
         ramas = []
         for parte in deco.split(","):
             parte = parte.strip()
             if parte.startswith("HEAD ->"):
-                rama = parte[len("HEAD ->"):].strip()
+                rama = parte[len("HEAD ->") :].strip()
                 if rama:
                     ramas.append(rama)
             elif parte.startswith("refs/heads/"):
-                ramas.append(parte[len("refs/heads/"):])
+                ramas.append(parte[len("refs/heads/") :])
             elif parte.startswith("refs/remotes/"):
-                ramas.append(parte[len("refs/remotes/"):])
+                ramas.append(parte[len("refs/remotes/") :])
             elif "/" in parte and not parte.startswith("tag:"):
                 ramas.append(parte)
         if ramas:
@@ -322,6 +356,7 @@ def _construir_sha_a_ramas(repo: Repo) -> dict[str, list[str]]:
 
 
 # ── 3c. Commits exclusivos por tag (usando merge_base) ───────────────────────
+
 
 def calcular_commits_exclusivos_tag(
     repo: Repo,
@@ -338,11 +373,9 @@ def calcular_commits_exclusivos_tag(
 
     try:
         bases = repo.merge_base(commit_padre_tag, commit_tag)
-        base  = bases[0] if bases else commit_padre_tag
+        base = bases[0] if bases else commit_padre_tag
 
-        commits = list(repo.iter_commits(
-            f"{base.hexsha}..{commit_tag.hexsha}", max_count=5000
-        ))
+        commits = list(repo.iter_commits(f"{base.hexsha}..{commit_tag.hexsha}", max_count=5000))
 
         commits_data = []
         autores_set = set()
@@ -351,15 +384,17 @@ def calcular_commits_exclusivos_tag(
         for c in commits:
             autores_set.add(c.author.name)
             message = c.message
-            commits_data.append({
-                "hash":    c.hexsha[:7],
-                "full_hash": c.hexsha,
-                "autor":   c.author.name,
-                "mensaje": message.strip().splitlines()[0][:80] if message else "",
-                "mensaje_full": message.strip() if message else "",
-                "fecha":   from_timestamp(c.committed_date).strftime(strftime_fmt),
-                "parents": [p.hexsha[:7] for p in c.parents]
-            })
+            commits_data.append(
+                {
+                    "hash": c.hexsha[:7],
+                    "full_hash": c.hexsha,
+                    "autor": c.author.name,
+                    "mensaje": message.strip().splitlines()[0][:80] if message else "",
+                    "mensaje_full": message.strip() if message else "",
+                    "fecha": from_timestamp(c.committed_date).strftime(strftime_fmt),
+                    "parents": [p.hexsha[:7] for p in c.parents],
+                }
+            )
 
         try:
             diff = base.diff(commit_tag)
@@ -373,38 +408,36 @@ def calcular_commits_exclusivos_tag(
 
         dias = 0
         try:
-            delta = (
-                from_timestamp(commit_tag.committed_date)
-                - from_timestamp(base.committed_date)
-            )
+            delta = from_timestamp(commit_tag.committed_date) - from_timestamp(base.committed_date)
             dias = delta.days
         except Exception:
             pass
 
         return {
-            "num_commits":  len(commits),
-            "autores":      sorted(autores_set),
+            "num_commits": len(commits),
+            "autores": sorted(autores_set),
             "num_archivos": len(archivos_set),
-            "archivos":     sorted(archivos_set),
+            "archivos": sorted(archivos_set),
             "commits_list": commits_data,
-            "dias":          dias,
+            "dias": dias,
             "merge_base_sha": base.hexsha[:7],
         }
 
     except Exception as e:
         print(f"[DEBUG] Error en calcular_commits_exclusivos_tag: {e}")
         return {
-            "num_commits":   0,
-            "autores":       [],
-            "num_archivos":  0,
-            "archivos":      [],
+            "num_commits": 0,
+            "autores": [],
+            "num_archivos": 0,
+            "archivos": [],
             "commits_list": [],
-            "dias":          0,
+            "dias": 0,
             "merge_base_sha": "N/A",
         }
 
 
 # ── 3d. Análisis topológico: aristas reales entre tags ───────────────────────
+
 
 def analizar_topologia_tags(repo: Repo, tags: list[dict[str, Any]]) -> dict[str, Any]:
     """
@@ -445,7 +478,7 @@ def analizar_topologia_tags(repo: Repo, tags: list[dict[str, Any]]) -> dict[str,
         parts = line.split()
         if not parts:
             continue
-        sha  = parts[0]
+        sha = parts[0]
         pars = parts[1:]
         parent_map[sha] = pars
         topo_order.append(sha)
@@ -458,16 +491,14 @@ def analizar_topologia_tags(repo: Repo, tags: list[dict[str, Any]]) -> dict[str,
         ramas_aqui = set(sha_a_ramas_direct.get(sha, []))
         sha_al_rama_activo.setdefault(sha, set()).update(ramas_aqui)
         for p_sha in parent_map.get(sha, []):
-            sha_al_rama_activo.setdefault(p_sha, set()).update(
-                sha_al_rama_activo.get(sha, set())
-            )
+            sha_al_rama_activo.setdefault(p_sha, set()).update(sha_al_rama_activo.get(sha, set()))
 
     sha_a_ramas_completo: dict[str, list[str]] = {
-        sha: sorted(ramas)
-        for sha, ramas in sha_al_rama_activo.items()
+        sha: sorted(ramas) for sha, ramas in sha_al_rama_activo.items()
     }
 
     commit_cache: dict[str, Any] = {}
+
     def get_commit_cached(sha: str) -> Any:
         if sha not in commit_cache:
             commit_cache[sha] = repo.commit(sha)
@@ -487,11 +518,11 @@ def analizar_topologia_tags(repo: Repo, tags: list[dict[str, Any]]) -> dict[str,
         if not commit:
             continue
         resultado[sha] = {
-            "all_tags":    tnames,
-            "commit":      commit,
+            "all_tags": tnames,
+            "commit": commit,
             "padres_shas": [],
-            "ramas":       identificar_ramas_de_tag(repo, sha, sha_a_ramas_completo),
-            "stats":       {}
+            "ramas": identificar_ramas_de_tag(repo, sha, sha_a_ramas_completo),
+            "stats": {},
         }
 
     tags_vistos_en_commit: dict[str, set[str]] = {}
@@ -513,8 +544,7 @@ def analizar_topologia_tags(repo: Repo, tags: list[dict[str, Any]]) -> dict[str,
             elif num_candidatos > 1:
                 for cand_sha in candidatos:
                     es_superado = any(
-                        otro_sha != cand_sha
-                        and es_ancestro_rapido(cand_sha, otro_sha)
+                        otro_sha != cand_sha and es_ancestro_rapido(cand_sha, otro_sha)
                         for otro_sha in candidatos
                     )
                     if not es_superado:
@@ -526,11 +556,17 @@ def analizar_topologia_tags(repo: Repo, tags: list[dict[str, Any]]) -> dict[str,
 
             if padres_directos:
                 padre_commit = get_commit_cached(padres_directos[0])
-                stats = calcular_commits_exclusivos_tag(repo, resultado[sha]["commit"], padre_commit)
+                stats = calcular_commits_exclusivos_tag(
+                    repo, resultado[sha]["commit"], padre_commit
+                )
             else:
                 stats = {
-                    "num_commits":   0, "autores":       [], "num_archivos":  0,
-                    "archivos":      [], "commits_list": [], "dias":           0,
+                    "num_commits": 0,
+                    "autores": [],
+                    "num_archivos": 0,
+                    "archivos": [],
+                    "commits_list": [],
+                    "dias": 0,
                     "merge_base_sha": "(raíz)",
                 }
             resultado[sha]["stats"] = stats
@@ -542,14 +578,24 @@ def analizar_topologia_tags(repo: Repo, tags: list[dict[str, Any]]) -> dict[str,
     return resultado
 
 
-
-def generar_grafo_html(repo: Repo, tags: list[dict[str, Any]], topologia: dict[str, Any] | None = None, historial: dict[str, Any] | None = None, busqueda: dict[str, Any] | None = None) -> str:
+def generar_grafo_html(
+    repo: Repo,
+    tags: list[dict[str, Any]],
+    topologia: dict[str, Any] | None = None,
+    historial: dict[str, Any] | None = None,
+    busqueda: dict[str, Any] | None = None,
+    panel_busqueda: str = "",
+) -> tuple[str, list[dict[str, Any]], list[dict[str, Any]]]:
     """Genera un archivo HTML con un grafo interactivo de los tags y un explorador de commits."""
     if not tags:
-        return "<html><body style='font-family:sans-serif; padding:50px;'><h1>No se encontraron tags</h1><p>El repositorio requiere al menos un tag para generar el grafo.</p></body></html>"
+        return (
+            "<html><body style='font-family:sans-serif; padding:50px;'><h1>No se encontraron tags</h1><p>El repositorio requiere al menos un tag para generar el grafo.</p></body></html>",
+            [],
+            [],
+        )
 
-    nodes = []
-    edges = []
+    nodes: list[dict[str, Any]] = []
+    edges: list[dict[str, Any]] = []
 
     # Agrupar tags por SHA
     tags_by_sha: dict[str, list[dict[str, Any]]] = {}
@@ -559,9 +605,39 @@ def generar_grafo_html(repo: Repo, tags: list[dict[str, Any]], topologia: dict[s
             continue
         tags_by_sha.setdefault(sha, []).append(t)
 
-    shas_ordenados = sorted(tags_by_sha.keys(), key=lambda s: tags_by_sha[s][0].get("fecha_iso") or "")
+    shas_ordenados = sorted(
+        tags_by_sha.keys(), key=lambda s: tags_by_sha[s][0].get("fecha_iso") or ""
+    )
+
+    # Gap #3: Parser semver para categorizar importancia de nodos
+    import re as _re
+
+    SEMVER_RE = _re.compile(r"^v?(\d+)\.(\d+)\.(\d+)(?:[-.](\w[\w.\-]*))?$")
+
+    def parsear_semver(tag_nombre: str) -> tuple[int, int, int] | None:
+        m = SEMVER_RE.match(tag_nombre)
+        if m:
+            return (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        return None
+
+    def calcular_tamano_tag(tags_en_sha: list[dict[str, Any]]) -> float:
+        """Mayor tamaño para major versions altos; base 13px, escala con semver."""
+        max_major = 0
+        for t in tags_en_sha:
+            sv = parsear_semver(t.get("nombre", ""))
+            if sv:
+                max_major = max(max_major, sv[0])
+        base = 13.0
+        if max_major >= 5:
+            return base + 9.0
+        if max_major >= 3:
+            return base + 6.0
+        if max_major >= 1:
+            return base + 3.0
+        return base
 
     import re
+
     # 1. Configurar y limpiar prefijos explícitos del .env (para evitar whitespaces o comillas)
     # Si un tag empieza con alguno de estos, se cortará por completo.
     env_prefixes = os.getenv("TAG_PREFIXES", "")
@@ -573,7 +649,7 @@ def generar_grafo_html(repo: Repo, tags: list[dict[str, Any]], topologia: dict[s
 
     # 2. Detectar automáticamente prefijos comunes compartidos para hacer resúmenes (ej: vtr-250812)
     # Busca un patrón tipo "palabra-palabra-", "palabra_palabra_", etc.
-    prefix_pattern = re.compile(r'^([a-zA-Z0-9]+(?:[-_][a-zA-Z0-9]+)*[-_])')
+    prefix_pattern = re.compile(r"^([a-zA-Z0-9]+(?:[-_][a-zA-Z0-9]+)*[-_])")
     prefix_counts: dict[str, int] = Counter()
     tag_to_prefix: dict[str, str] = {}
 
@@ -589,8 +665,8 @@ def generar_grafo_html(repo: Repo, tags: list[dict[str, Any]], topologia: dict[s
 
     def generar_acronimo(pfx: str) -> str:
         """Genera un acrónimo del prefijo (ej: 'v-tag-release-' -> 'vtr-')"""
-        sep = '-' if '-' in pfx else '_'
-        partes = re.split(r'[-_]', pfx)
+        sep = "-" if "-" in pfx else "_"
+        partes = re.split(r"[-_]", pfx)
         acronimo = "".join(parte[0].lower() for parte in partes if parte)
         return acronimo + sep
 
@@ -599,14 +675,14 @@ def generar_grafo_html(repo: Repo, tags: list[dict[str, Any]], topologia: dict[s
         for pfx in PREFIJOS_LIMPIAR:
             if nombre.lower().startswith(pfx.lower()):
                 # Mantener el case original del resto de la cadena
-                return nombre[len(pfx):]
+                return nombre[len(pfx) :]
 
         # B. Detección automática de prefijo común (más de 1 tag lo usa)
         pfx = tag_to_prefix.get(nombre)
         if pfx and prefix_counts.get(pfx, 0) > 1:
             acronimo = generar_acronimo(pfx)
             # Reemplazar la parte del prefijo con el acrónimo
-            return acronimo + nombre[len(pfx):]
+            return acronimo + nombre[len(pfx) :]
 
         return nombre
 
@@ -627,38 +703,41 @@ def generar_grafo_html(repo: Repo, tags: list[dict[str, Any]], topologia: dict[s
         rep_tag = tags_en_sha[0]
 
         topo_info = topologia.get(sha, {}) if topologia else {}
-        ramas     = topo_info.get("ramas", [])
-        stats     = topo_info.get("stats", {})
-        padres    = topo_info.get("padres_shas", [])
-        es_main   = es_rama_principal(ramas)
+        ramas = topo_info.get("ramas", [])
+        stats = topo_info.get("stats", {})
+        padres = topo_info.get("padres_shas", [])
+        es_main = es_rama_principal(ramas)
 
         # Mapear todos los commits exclusivos de este tag a este nodo
         for c_meta in stats.get("commits_list", []):
             commit_to_tag[c_meta["hash"]] = sha
             # También para full hashes si están disponibles
             if "full_hash" in c_meta:
-                 commit_to_tag[c_meta["full_hash"]] = sha
+                commit_to_tag[c_meta["full_hash"]] = sha
 
         label_name = ", ".join([limpiar_label(t["nombre"]) for t in tags_en_sha])
         if len(tags_en_sha) > 2:
-            label_name = f"{limpiar_label(tags_en_sha[0]['nombre'])} (+{len(tags_en_sha)-1})"
+            label_name = f"{limpiar_label(tags_en_sha[0]['nombre'])} (+{len(tags_en_sha) - 1})"
 
         title_txt = f"Tags: {', '.join(t['nombre'] for t in tags_en_sha)}\nFecha: {rep_tag['fecha']}\nAutor: {rep_tag['autor']}\nHash: {rep_tag['hash']}"
 
-        nodes.append({
-            "id":          sha,
-            "label":       label_name,
-            "title":       title_txt,
-            "all_tags":    tags_en_sha,
-            "author":      rep_tag["autor"],
-            "date":        rep_tag["fecha"],
-            "hash":        rep_tag["hash"],
-            "full_hash":   sha,
-            "is_main":     es_main,
-            "ramas":       ramas,
-            "stats":       stats,
-            "value":       i + 1,
-        })
+        nodes.append(
+            {
+                "id": sha,
+                "label": label_name,
+                "title": title_txt,
+                "all_tags": tags_en_sha,
+                "author": rep_tag["autor"],
+                "date": rep_tag["fecha"],
+                "hash": rep_tag["hash"],
+                "full_hash": sha,
+                "is_main": es_main,
+                "ramas": ramas,
+                "stats": stats,
+                "value": i + 1,
+                "size": calcular_tamano_tag(tags_en_sha),
+            }
+        )
 
         if topologia:
             for padre_sha in padres:
@@ -666,21 +745,30 @@ def generar_grafo_html(repo: Repo, tags: list[dict[str, Any]], topologia: dict[s
                 n_arch = stats.get("num_archivos", 0)
                 edge_label = ""
                 if n_exc > 0:
-                     edge_label = f"{n_exc} cmts" + (f" • {n_arch} files" if n_arch else "")
+                    edge_label = f"{n_exc} cmts" + (f" • {n_arch} files" if n_arch else "")
 
-                edges.append({
-                    "id": f"{padre_sha}_{sha}",
-                    "from": padre_sha, "to": sha, "arrows": "to",
-                    "label": edge_label,
-                    "is_parallel": not es_main,
-                    "n_archivos": n_arch,
-                    "n_commits": n_exc
-                })
+                edges.append(
+                    {
+                        "id": f"{padre_sha}_{sha}",
+                        "from": padre_sha,
+                        "to": sha,
+                        "arrows": "to",
+                        "label": edge_label,
+                        "is_parallel": not es_main,
+                        "n_archivos": n_arch,
+                        "n_commits": n_exc,
+                    }
+                )
         elif i > 0:
-            edges.append({
-                "id": f"{shas_ordenados[i-1]}_{sha}",
-                "from": shas_ordenados[i-1], "to": sha, "arrows": "to", "is_parallel": False
-            })
+            edges.append(
+                {
+                    "id": f"{shas_ordenados[i - 1]}_{sha}",
+                    "from": shas_ordenados[i - 1],
+                    "to": sha,
+                    "arrows": "to",
+                    "is_parallel": False,
+                }
+            )
 
     html_template = """<!DOCTYPE html>
 <html lang="es">
@@ -1151,18 +1239,31 @@ def generar_grafo_html(repo: Repo, tags: list[dict[str, Any]], topologia: dict[s
 
     <div id="mynetwork"></div>
 
-    <!-- Panel de leyenda del grafo [VISUAL ONLY] -->
-    <div class="intro-panel">
+    <!-- Panel de leyenda del grafo [Gap #5: dinamico con estadisticas reales] -->
+    <div class="intro-panel" id="intro-panel">
         <h2 style="margin:0 0 4px; font-size:0.88rem; font-weight:600; color:var(--text-primary);">Mapa de Versiones</h2>
-        <div style="font-size:0.72rem; color:var(--text-muted); margin-bottom:14px;">Historial de tags y commits</div>
+        <div style="font-size:0.72rem; color:var(--text-muted); margin-bottom:12px;" id="intro-subtitle">Cargando...</div>
+        <div id="intro-stats" style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:12px;"></div>
         <div style="font-size:0.72rem; color:var(--text-secondary);">
-            <div style="display:flex; align-items:center; gap:8px; margin-bottom:7px;">
-                <div style="width:8px; height:8px; border-radius:50%; background:var(--text-primary); flex-shrink:0;"></div>
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+                <div style="width:10px; height:10px; border-radius:50%; background:var(--text-primary); flex-shrink:0;"></div>
                 Rama Principal
             </div>
-            <div style="display:flex; align-items:center; gap:8px;">
-                <div style="width:8px; height:8px; border-radius:50%; background:var(--accent-dim); flex-shrink:0;"></div>
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+                <div style="width:10px; height:10px; border-radius:50%; background:var(--accent-dim); flex-shrink:0;"></div>
                 Rama Lateral
+            </div>
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+                <div style="width:10px; height:10px; border-radius:50%; background:#8660dd; flex-shrink:0;"></div>
+                Destacado
+            </div>
+            <div style="display:flex; align-items:center; gap:8px; margin-top:8px; padding-top:8px; border-top:1px solid var(--border-subtle);">
+                <div style="width:16px; height:2px; background:var(--text-secondary); flex-shrink:0;"></div>
+                Lineal
+            </div>
+            <div style="display:flex; align-items:center; gap:8px; margin-top:4px;">
+                <div style="width:16px; height:2px; background:var(--text-secondary); border-top:2px dashed var(--text-secondary); flex-shrink:0;"></div>
+                Merge
             </div>
         </div>
     </div>
@@ -1230,75 +1331,85 @@ def generar_grafo_html(repo: Repo, tags: list[dict[str, Any]], topologia: dict[s
         const globalSearchData = __GLOBAL_SEARCH__;
 
         let currentTab = 'info';
-        let selectedNode = null;
-        let selectedCommit = null;
-        let lastHighlightedNode = null;
+            let selectedNode = null;
+            let selectedCommit = null;
+            let lastHighlightedNode = null;
 
-        const container = document.getElementById('mynetwork');
-        let savedPositions = {};
-        try { savedPositions = JSON.parse(localStorage.getItem('gitsearch_positions')) || {}; } catch(e){}
-        
-        function savePositions() {
-            try { localStorage.setItem('gitsearch_positions', JSON.stringify(savedPositions)); } catch(e){}
-        }
-
-        const THEMES_CONFIG = {
-            dark: { mainBg: '#e4e6eb', mainBorder: '#ffffff', sideBg: '#60646b', sideBorder: '#9aa0a6', edge: '#4a4d54', edgeHi: '#888d96', font: '#e4e6eb' },
-            light: { mainBg: '#21242b', mainBorder: '#000000', sideBg: '#b1b6bd', sideBorder: '#8a8f96', edge: '#a8adb5', edgeHi: '#60646b', font: '#21242b' }
-        };
-        let currentTheme = localStorage.getItem('gs_theme') || 'dark';
-
-        // Apply theme initially
-        if (currentTheme === 'light') document.documentElement.classList.add('gs-theme-light');
-
-        function toggleTheme() {
-            currentTheme = currentTheme === 'dark' ? 'light' : 'dark';
-            localStorage.setItem('gs_theme', currentTheme);
-            if (currentTheme === 'light') {
-                document.documentElement.classList.add('gs-theme-light');
-                document.documentElement.classList.remove('gs-theme-dark');
-            } else {
-                document.documentElement.classList.add('gs-theme-dark');
-                document.documentElement.classList.remove('gs-theme-light');
+            const container = document.getElementById('mynetwork');
+            let savedPositions = {};
+            try { savedPositions = JSON.parse(localStorage.getItem('gitsearch_positions')) || {}; } catch(e){}
+            
+            function savePositions() {
+                try { localStorage.setItem('gitsearch_positions', JSON.stringify(savedPositions)); } catch(e){}
             }
-            updateNetworkColors();
-        }
 
-        // Apply visual differentiation for changes without overloading
-        function getEdgeWidth(nCommits) {
-            return 1.0 + Math.min((nCommits || 0) * 0.1, 3.5);
-        }
-
-        const nodes = new vis.DataSet(nodesData.map(n => {
-            const pos = savedPositions[n.id];
-            const t = THEMES_CONFIG[currentTheme];
-            return {
-                ...n, shape: 'dot', size: 13, borderWidth: 2,
-                color: { background: n.is_main ? t.mainBg : t.sideBg, border: n.is_main ? t.mainBorder : t.sideBorder, highlight: { background: t.mainBorder, border: t.mainBorder } },
-                font: { color: t.font, face: 'Inter', size: 12 },
-                x: pos ? pos.x : undefined,
-                y: pos ? pos.y : undefined
+            const THEMES_CONFIG = {
+                dark: { mainBg: '#e4e6eb', mainBorder: '#ffffff', sideBg: '#60646b', sideBorder: '#9aa0a6', edge: '#4a4d54', edgeHi: '#888d96', font: '#e4e6eb' },
+                light: { mainBg: '#21242b', mainBorder: '#000000', sideBg: '#b1b6bd', sideBorder: '#8a8f96', edge: '#a8adb5', edgeHi: '#60646b', font: '#21242b' }
             };
-        }));
-        
-        const edges = new vis.DataSet(edgesData.map(e => {
-            const t = THEMES_CONFIG[currentTheme];
-            return {
-                ...e, color: { color: t.edge, highlight: t.edgeHi },
-                dashes: e.is_parallel ? [4, 4] : false, width: getEdgeWidth(e.n_commits || 0),
-                font: { 
-                    align: 'horizontal', 
-                    size: 10, 
-                    color: currentTheme === 'dark' ? '#a0a4ab' : '#666666', 
-                    strokeWidth: 3, 
-                    strokeColor: currentTheme === 'dark' ? '#181a1f' : '#f4f2ee' 
+            let currentTheme = localStorage.getItem('gs_theme') || 'dark';
+
+            if (currentTheme === 'light') document.documentElement.classList.add('gs-theme-light');
+
+            function toggleTheme() {
+                currentTheme = currentTheme === 'dark' ? 'light' : 'dark';
+                localStorage.setItem('gs_theme', currentTheme);
+                if (currentTheme === 'light') {
+                    document.documentElement.classList.add('gs-theme-light');
+                    document.documentElement.classList.remove('gs-theme-dark');
+                } else {
+                    document.documentElement.classList.add('gs-theme-dark');
+                    document.documentElement.classList.remove('gs-theme-light');
                 }
-            };
-        }));
+                updateNetworkColors();
+            }
+
+            function getEdgeWidth(nCommits) {
+                return 1.0 + Math.min((nCommits || 0) * 0.1, 3.5);
+            }
+
+            nodes = new vis.DataSet(nodesData.map(n => {
+                const pos = savedPositions[n.id];
+                const t = THEMES_CONFIG[currentTheme];
+                const nodeSize = n.size || 13;
+                return {
+                    ...n, shape: 'dot', size: nodeSize, borderWidth: n.is_main ? 2.5 : 2,
+                    color: { background: n.is_main ? t.mainBg : t.sideBg, border: n.is_main ? t.mainBorder : t.sideBorder, highlight: { background: t.mainBorder, border: t.mainBorder } },
+                    font: { color: t.font, face: 'Inter', size: Math.max(10, Math.min(13, 9 + Math.floor(nodeSize / 3))) },
+                    x: pos ? pos.x : undefined,
+                    y: pos ? pos.y : undefined
+                };
+            }));
+            
+            edges = new vis.DataSet(edgesData.map(e => {
+                const t = THEMES_CONFIG[currentTheme];
+                const isMergeEdge = e.from !== undefined && edgesData.filter(x => x.to === e.to).length > 1;
+                const smoothType = isMergeEdge ? 'dynamic' : 'continuous';
+                return {
+                    ...e, color: { color: t.edge, highlight: t.edgeHi },
+                    dashes: e.is_parallel ? [4, 4] : false, width: getEdgeWidth(e.n_commits || 0),
+                    smooth: { enabled: true, type: smoothType, forceDirection: 'vertical', roundness: isMergeEdge ? 0.3 : 0.5 },
+                    font: { 
+                        align: 'horizontal', 
+                        size: 10, 
+                        color: currentTheme === 'dark' ? '#a0a4ab' : '#666666', 
+                        strokeWidth: 3, 
+                        strokeColor: currentTheme === 'dark' ? '#181a1f' : '#f4f2ee' 
+                    }
+                };
+            }));
 
         const hasBranchesGlobal = edgesData.some(e => edgesData.filter(e2 => e2.to === e.to).length > 1);
-        let baseLevelSep = hasBranchesGlobal ? 160 : 240;
-        let baseNodeSpac = hasBranchesGlobal ? 110  : 190;
+        const totalCommitsInGraph = nodesData.reduce((acc, n) => acc + (n.stats?.num_commits || 0), 0);
+        const numNodes = nodesData.length;
+        const depthFactor = Math.max(1, Math.log2(numNodes + 1));
+        const commitDensityFactor = 1 + Math.min(totalCommitsInGraph / 200, 1.5);
+        const baseLevelSep = hasBranchesGlobal
+            ? Math.round(Math.min(180, 100 + depthFactor * 20) * commitDensityFactor)
+            : Math.round(Math.min(260, 150 + depthFactor * 30));
+        const baseNodeSpac = hasBranchesGlobal
+            ? Math.round(Math.min(130, 80 + depthFactor * 15))
+            : Math.round(Math.min(200, 120 + depthFactor * 20));
 
         const network = new vis.Network(container, { nodes, edges }, {
             edges: {
@@ -1324,6 +1435,44 @@ def generar_grafo_html(repo: Repo, tags: list[dict[str, Any]], topologia: dict[s
                 enabled: false
             }
         });
+
+        // Gap #5: Poblar leyenda dinamica con estadisticas reales del grafo
+        (function populateDynamicLegend() {
+            const totalNodes = nodesData.length;
+            const totalEdges = edgesData.length;
+            const totalCommits = totalCommitsInGraph;
+            const mergeEdges = edgesData.filter(e => edgesData.filter(x => x.to === e.to).length > 1).length;
+            const mainBranches = nodesData.filter(n => n.is_main).length;
+            const dateRange = (function() {
+                if (!nodesData.length) return '';
+                const dates = nodesData.map(n => n.date).filter(Boolean).sort();
+                if (dates.length === 0) return '';
+                return `${dates[0]} → ${dates[dates.length - 1]}`;
+            })();
+            
+            const subtitleEl = document.getElementById('intro-subtitle');
+            const statsEl = document.getElementById('intro-stats');
+            
+            if (subtitleEl) {
+                subtitleEl.textContent = `${totalNodes} versión${totalNodes !== 1 ? 'es' : ''}` +
+                    (dateRange ? ` · ${dateRange}` : '');
+            }
+            
+            if (statsEl) {
+                const statItems = [
+                    { label: 'Tags', value: totalNodes },
+                    { label: 'Commits', value: totalCommits },
+                    { label: 'Aristas', value: totalEdges },
+                    { label: 'Merges', value: mergeEdges },
+                ];
+                statsEl.innerHTML = statItems.map(s => `
+                    <div style="background:var(--bg-raised); border:1px solid var(--border-subtle); border-radius:4px; padding:6px 8px;">
+                        <div style="font-size:0.95rem; font-weight:700; color:var(--text-primary);">${s.value}</div>
+                        <div style="font-size:0.62rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.04em;">${s.label}</div>
+                    </div>
+                `).join('');
+            }
+        })();
 
         function updateNetworkColors() {
             const t = THEMES_CONFIG[currentTheme];
@@ -1417,7 +1566,6 @@ def generar_grafo_html(repo: Repo, tags: list[dict[str, Any]], topologia: dict[s
         let expandedNodes = [];
         let expandedEdges = [];
         let originalEdgeId = null;
-        let savedCameraState = null;
 
         function collapseCommits() {
             const pos = network.getPositions();
@@ -1515,11 +1663,15 @@ def generar_grafo_html(repo: Repo, tags: list[dict[str, Any]], topologia: dict[s
                         
                         const parentPos = network.getPositions([tagSha])[tagSha] || {x: 0, y: 0};
                         const commitHashes = new Set(commits.map(c => c.hash));
-                        let groupHasBranches = commits.some(c => c.parents && c.parents.length > 1);
+                        let groupHasMerges = commits.some(c => c.parents && c.parents.length > 1);
                         
-                        let isGraphCurrentlyBranched = hasBranchesGlobal || groupHasBranches;
-                        let adaptLevelSep = isGraphCurrentlyBranched ? 180 : 260;
-                        let adaptNodeSpac = isGraphCurrentlyBranched ? 140  : 220;
+                        let isGraphCurrentlyBranched = hasBranchesGlobal || groupHasMerges;
+                        let adaptLevelSep = Math.round(isGraphCurrentlyBranched
+                            ? Math.max(140, 180 - commits.length * 2)
+                            : Math.max(180, 280 - commits.length * 3));
+                        let adaptNodeSpac = Math.round(isGraphCurrentlyBranched
+                            ? Math.max(100, 140 - commits.length)
+                            : Math.max(140, 220 - commits.length * 2));
                         
                         network.setOptions({
                             layout: { hierarchical: { enabled: true, direction: 'UD', sortMethod: 'directed', levelSeparation: adaptLevelSep, nodeSpacing: adaptNodeSpac } },
@@ -1544,14 +1696,93 @@ def generar_grafo_html(repo: Repo, tags: list[dict[str, Any]], topologia: dict[s
                             return { labelTxt, width, height };
                         });
                         
-                        // Espaciado basado en nodos mas grandes
                         const maxWidth = Math.max(...nodeSizes.map(n => n.width));
                         const maxHeight = Math.max(...nodeSizes.map(n => n.height));
-                        const hSpacing = maxWidth + 70;
-                        const vSpacing = maxHeight + 90;
+                        const hSpacing = maxWidth + 80;
+                        const vSpacing = maxHeight + 100;
                         
-                        // Grid distribution
-                        const cols = Math.max(2, Math.ceil(Math.sqrt(commits.length * 1.2)));
+                        // Gap #1: Algoritmo de layout DAG topologico
+                        // Construir mapa de parents {hash -> [parent_hashes]}
+                        const parentMap = {};
+                        for (const c of commits) {
+                            parentMap[c.hash] = (c.parents || []).map(p => {
+                                const match = commits.find(x => x.hash === p || x.hash === p.slice(0, 7));
+                                return match ? match.hash : p;
+                            });
+                        }
+                        
+                        // Calcular nivel topologico (distancia desde la raiz) para cada commit
+                        const commitLevels = {};
+                        const visited = new Set();
+                        function computeLevel(hash, depth = 0) {
+                            if (visited.has(hash)) return commitLevels[hash] || 0;
+                            visited.add(hash);
+                            const parents = parentMap[hash] || [];
+                            if (parents.length === 0) {
+                                commitLevels[hash] = depth;
+                                return depth;
+                            }
+                            let maxParentDepth = depth;
+                            for (const p of parents) {
+                                if (commitHashes.has(p)) {
+                                    maxParentDepth = Math.max(maxParentDepth, computeLevel(p, depth + 1));
+                                } else {
+                                    maxParentDepth = Math.max(maxParentDepth, depth);
+                                }
+                            }
+                            commitLevels[hash] = maxParentDepth;
+                            return maxParentDepth;
+                        }
+                        
+                        for (const c of commits) {
+                            computeLevel(c.hash, 0);
+                        }
+                        
+                        // Asignar lanes (pistas horizontales) para minimizar cruces
+                        // Algoritmo: para cada nivel, contar parents ya asignados y asignar lane disponible
+                        const laneAssignments = {};
+                        const lanesUsedAtLevel = {};
+                        
+                        for (const c of commits) {
+                            const level = commitLevels[c.hash];
+                            if (!lanesUsedAtLevel[level]) lanesUsedAtLevel[level] = new Set();
+                            
+                            const parents = parentMap[c.hash] || [];
+                            const parentLanes = parents
+                                .filter(p => commitHashes.has(p))
+                                .map(p => laneAssignments[p])
+                                .filter(l => l !== undefined);
+                            
+                            let assignedLane;
+                            if (parentLanes.length > 0) {
+                                assignedLane = Math.min(...parentLanes);
+                                for (let l = 0; l <= assignedLane + 1; l++) {
+                                    if (!lanesUsedAtLevel[level].has(l)) {
+                                        assignedLane = l;
+                                        break;
+                                    }
+                                }
+                            } else {
+                                assignedLane = 0;
+                                while (lanesUsedAtLevel[level].has(assignedLane)) {
+                                    assignedLane++;
+                                }
+                            }
+                            
+                            laneAssignments[c.hash] = assignedLane;
+                            lanesUsedAtLevel[level].add(assignedLane);
+                        }
+                        
+                        // Determinar rango de niveles y lanes para calcular offsets
+                        const allLevels = [...new Set(Object.values(commitLevels))].sort((a, b) => a - b);
+                        const allLanes = [...new Set(Object.values(laneAssignments))].sort((a, b) => a - b);
+                        const maxLane = allLanes.length > 0 ? Math.max(...allLanes) : 0;
+                        const totalVerticalSpan = allLevels.length > 1
+                            ? (allLevels[allLevels.length - 1] - allLevels[0]) * vSpacing
+                            : vSpacing * 2;
+                        const totalHorizontalSpan = maxLane * hSpacing;
+                        const startX = parentPos.x - totalHorizontalSpan / 2;
+                        const startY = parentPos.y + 100;
                         
                         for (let i = 0; i < commits.length; i++) {
                             const c = commits[i];
@@ -1562,14 +1793,13 @@ def generar_grafo_html(repo: Repo, tags: list[dict[str, Any]], topologia: dict[s
                             
                             const pos = savedPositions[cId];
                             
-                            // Grid positioning with stagger
-                            const col = i % cols;
-                            const row = Math.floor(i / cols);
-                            const xOffset = (col - Math.floor(cols / 2)) * hSpacing;
-                            const yOffset = row * vSpacing;
+                            const level = commitLevels[c.hash];
+                            const lane = laneAssignments[c.hash] || 0;
+                            const xOffset = lane * hSpacing;
+                            const yOffset = level * vSpacing;
                             
-                            let initialX = pos ? pos.x : (parentPos.x + xOffset);
-                            let initialY = pos ? pos.y : (parentPos.y + 100 + yOffset);
+                            let initialX = pos ? pos.x : (startX + xOffset);
+                            let initialY = pos ? pos.y : (startY + yOffset);
                             
                             newNodes.push({
                                 id: cId,
@@ -1587,13 +1817,17 @@ def generar_grafo_html(repo: Repo, tags: list[dict[str, Any]], topologia: dict[s
                             });
                             
                             let parents = c.parents || [];
+                            const isMerge = parents.length > 1;
+                            const edgeSmooth = isMerge
+                                ? { enabled: true, type: 'dynamic', forceDirection: 'vertical', roundness: 0.4 }
+                                : { enabled: true, type: 'continuous', forceDirection: 'vertical', roundness: 0.5 };
                             if (parents.length === 0 && i === 0 && isAttachedToParent) {
                                 newEdges.push({ 
                                     id: `exp_edge_start_${c.hash}`, 
                                     from: startSha, 
                                     to: cId, 
                                     arrows: "to", 
-                                    smooth: { enabled: true, type: "continuous" },
+                                    smooth: edgeSmooth,
                                     color: { color: THEMES_CONFIG[currentTheme].edgeHi },
                                     width: 1.5
                                 });
@@ -1606,19 +1840,18 @@ def generar_grafo_html(repo: Repo, tags: list[dict[str, Any]], topologia: dict[s
                                             from: "exp_" + p,
                                             to: cId,
                                             arrows: "to",
-                                            smooth: { enabled: true, type: "continuous" },
+                                            smooth: edgeSmooth,
                                             color: { color: THEMES_CONFIG[currentTheme].edgeHi },
                                             width: 1.5
                                         });
                                     } else {
-                                        // Parent not in expanded group, link from startSha tag if appropriate
                                         if (isAttachedToParent && !linkedToStart) {
                                             newEdges.push({ 
                                                 id: `exp_edge_start_${p}_${c.hash}`, 
                                                 from: startSha, 
                                                 to: cId, 
                                                 arrows: "to", 
-                                                smooth: { enabled: true, type: "continuous" },
+                                                smooth: edgeSmooth,
                                                 color: { color: THEMES_CONFIG[currentTheme].edgeHi },
                                                 width: 1.5
                                             });
@@ -1646,7 +1879,7 @@ def generar_grafo_html(repo: Repo, tags: list[dict[str, Any]], topologia: dict[s
                                     from: "exp_" + c.hash,
                                     to: tagSha,
                                     arrows: "to",
-                                    smooth: { enabled: true, type: "continuous" },
+                                    smooth: { enabled: true, type: 'dynamic', forceDirection: 'vertical', roundness: 0.3 },
                                     color: { color: THEMES_CONFIG[currentTheme].edgeHi },
                                     dashes: [4, 4],
                                     width: 1.5
@@ -1655,14 +1888,13 @@ def generar_grafo_html(repo: Repo, tags: list[dict[str, Any]], topologia: dict[s
                             }
                         }
                         
-                        // Fallback just in case
                         if (!hasLeafLinkedToTag && commits.length > 0) {
                              newEdges.push({
                                  id: `exp_edge_end_fallback`,
                                  from: "exp_" + commits[commits.length-1].hash,
                                  to: tagSha,
                                  arrows: "to",
-                                 smooth: { enabled: true, type: "continuous" },
+                                 smooth: { enabled: true, type: 'dynamic', forceDirection: 'vertical', roundness: 0.3 },
                                  color: { color: THEMES_CONFIG[currentTheme].edgeHi },
                                  dashes: [4, 4],
                                  width: 1.5
@@ -2076,11 +2308,14 @@ def generar_grafo_html(repo: Repo, tags: list[dict[str, Any]], topologia: dict[s
     html = html.replace("__HISTORY_DATA__", json.dumps(historial["commits"] if historial else []))
     html = html.replace("__COMMIT_MAP__", json.dumps(commit_to_tag))
     html = html.replace("__GLOBAL_SEARCH__", json.dumps(busqueda) if busqueda else "null")
-    return html
+    html = html.replace("<!-- GITSEARCH_PANEL -->", panel_busqueda)
+    return html, nodes, edges
+
 
 # ──────────────────────────────────────────────
 # SECCIÓN 3.5 — BÚSQUEDA PROFUNDA DE COMMIT / CÓDIGO
 # ──────────────────────────────────────────────
+
 
 def ejecutar_busqueda(repo: Repo, criterio: str, topologia: dict[str, Any]) -> dict[str, Any]:
     """
@@ -2089,12 +2324,13 @@ def ejecutar_busqueda(repo: Repo, criterio: str, topologia: dict[str, Any]) -> d
     Devuelve un diccionario estructurado con los resultados para integrar en reporte y HTML.
     """
     import re
+
     print(f"[INFO] Ejecutando búsqueda profunda para: '{criterio}'...")
 
     shas_encontrados: dict[str, str] = {}
 
     # 1. ¿Es un hash de commit?
-    es_posible_hash = re.match(r'^[0-9a-fA-F]{4,40}$', criterio.strip())
+    es_posible_hash = re.match(r"^[0-9a-fA-F]{4,40}$", criterio.strip())
     if es_posible_hash:
         try:
             c = repo.commit(criterio.strip())
@@ -2114,7 +2350,9 @@ def ejecutar_busqueda(repo: Repo, criterio: str, topologia: dict[str, Any]) -> d
     # 3. Buscar por fragmento de línea de código (diff)
     # Permite encontrar combinaciones de palabras clave dispersas o ajustadas interactuando con git grep/log flexible
     partes = str(criterio).strip().split()
-    regex_flexible = ".*".join(re.escape(p) for p in partes) if len(partes) > 1 else re.escape(criterio)
+    regex_flexible = (
+        ".*".join(re.escape(p) for p in partes) if len(partes) > 1 else re.escape(criterio)
+    )
 
     try:
         raw_diff = repo.git.log("--all", f"-G{regex_flexible}", "-i", "--format=%H")
@@ -2162,34 +2400,39 @@ def ejecutar_busqueda(repo: Repo, criterio: str, topologia: dict[str, Any]) -> d
             except Exception:
                 pass
 
-            resultados.append({
-                "hash": hash_corto,
-                "full_hash": c.hexsha,
-                "tipo": tipo,
-                "mensaje": c.message.splitlines()[0][:100] if c.message else "Sin mensaje",
-                "autor": c.author.name,
-                "fecha": datetime.fromtimestamp(c.committed_date).strftime("%Y-%m-%d %H:%M"),
-                "tags": tags_del_commit,
-                "archivos": sorted(set(archivos))
-            })
+            resultados.append(
+                {
+                    "hash": hash_corto,
+                    "full_hash": c.hexsha,
+                    "tipo": tipo,
+                    "mensaje": c.message.splitlines()[0][:100] if c.message else "Sin mensaje",
+                    "autor": c.author.name,
+                    "fecha": datetime.fromtimestamp(c.committed_date).strftime("%Y-%m-%d %H:%M"),
+                    "tags": tags_del_commit,
+                    "archivos": sorted(set(archivos)),
+                }
+            )
         except Exception:
             continue
 
     resultados.sort(key=lambda x: str(x["fecha"]), reverse=True)
 
     print(f"[INFO] Búsqueda finalizada. {len(resultados)} coincidencias encontradas.")
-    return {
-        "criterio": criterio,
-        "total": len(resultados),
-        "resultados": resultados
-    }
+    return {"criterio": criterio, "total": len(resultados), "resultados": resultados}
 
 
 # ──────────────────────────────────────────────
 # SECCIÓN 4 — GENERACIÓN DEL REPORTE
 # ──────────────────────────────────────────────
 
-def generar_reporte(repo_path: str, historial: dict[str, Any], tags: list[dict[str, Any]], comparacion: dict[str, Any] | None, busqueda: dict[str, Any] | None = None) -> str:
+
+def generar_reporte(
+    repo_path: str,
+    historial: dict[str, Any],
+    tags: list[dict[str, Any]],
+    comparacion: dict[str, Any] | None,
+    busqueda: dict[str, Any] | None = None,
+) -> str:
     lineas = []
 
     def separador(titulo: str) -> None:
@@ -2218,7 +2461,7 @@ def generar_reporte(repo_path: str, historial: dict[str, Any], tags: list[dict[s
 
         lineas.append("\n  📋 Lista de Commits (más recientes primero):")
         lineas.append(f"    {'HASH':<8} {'FECHA':<17} {'AUTOR':<25} MENSAJE")
-        lineas.append(f"    {'-'*8} {'-'*17} {'-'*25} {'-'*40}")
+        lineas.append(f"    {'-' * 8} {'-' * 17} {'-' * 25} {'-' * 40}")
         for c in historial["commits"]:
             lineas.append(f"    {c['hash']:<8} {c['fecha']:<17} {c['autor']:<25} {c['mensaje']}")
 
@@ -2233,10 +2476,12 @@ def generar_reporte(repo_path: str, historial: dict[str, Any], tags: list[dict[s
             lineas.append(f"  Tags semver (vX.Y.Z) detectados: {len(semver_tags)}")
         lineas.append("")
         lineas.append(f"    {'TAG':<20} {'FECHA':<12} {'AUTOR':<25} HASH")
-        lineas.append(f"    {'-'*20} {'-'*12} {'-'*25} {'-'*8}")
+        lineas.append(f"    {'-' * 20} {'-' * 12} {'-' * 25} {'-' * 8}")
         for t in tags:
             marca = " ✔" if t["es_semver"] else ""
-            lineas.append(f"    {t['nombre']:<20} {t['fecha']:<12} {t['autor']:<25} {t['hash']}{marca}")
+            lineas.append(
+                f"    {t['nombre']:<20} {t['fecha']:<12} {t['autor']:<25} {t['hash']}{marca}"
+            )
 
     # ── Sección 3
     separador("SECCIÓN 3 — COMPARACIÓN ENTRE TAGS")
@@ -2245,7 +2490,9 @@ def generar_reporte(repo_path: str, historial: dict[str, Any], tags: list[dict[s
     elif "error" in comparacion:
         lineas.append(f"  [ERROR] No se pudo comparar tags: {comparacion['error']}")
     else:
-        lineas.append(f"  Comparando: {comparacion['tag_anterior']}  →  {comparacion['tag_actual']}")
+        lineas.append(
+            f"  Comparando: {comparacion['tag_anterior']}  →  {comparacion['tag_actual']}"
+        )
         lineas.append(f"  Total de commits nuevos : {comparacion['total_commits']}")
         lineas.append(f"  Archivos modificados    : {comparacion['total_archivos']}")
         lineas.append(f"  Autores involucrados    : {', '.join(comparacion['autores']) or 'N/A'}")
@@ -2258,9 +2505,11 @@ def generar_reporte(repo_path: str, historial: dict[str, Any], tags: list[dict[s
         if comparacion["commits"]:
             lineas.append("\n  📋 Commits Nuevos:")
             lineas.append(f"    {'HASH':<8} {'FECHA':<17} {'AUTOR':<25} MENSAJE")
-            lineas.append(f"    {'-'*8} {'-'*17} {'-'*25} {'-'*40}")
+            lineas.append(f"    {'-' * 8} {'-' * 17} {'-' * 25} {'-' * 40}")
             for c in comparacion["commits"]:
-                lineas.append(f"    {c['hash']:<8} {c['fecha']:<17} {c['autor']:<25} {c['mensaje']}")
+                lineas.append(
+                    f"    {c['hash']:<8} {c['fecha']:<17} {c['autor']:<25} {c['mensaje']}"
+                )
 
     # ── Sección 4 Búsqueda
     if busqueda:
@@ -2268,13 +2517,17 @@ def generar_reporte(repo_path: str, historial: dict[str, Any], tags: list[dict[s
         lineas.append(f"  Criterio buscado : '{busqueda['criterio']}'")
         lineas.append(f"  Total encontrados: {busqueda['total']}")
         lineas.append("")
-        if busqueda['total'] > 0:
+        if busqueda["total"] > 0:
             for i, r in enumerate(busqueda["resultados"], 1):
                 lineas.append(f"  {i}. {r['hash']} | Coincidencia: {r['tipo']}")
                 lineas.append(f"     Mensaje : {r['mensaje']}")
                 lineas.append(f"     Autor   : {r['autor']} | {r['fecha']}")
-                lineas.append(f"     Versión : {', '.join(r['tags']) if r['tags'] else 'Ninguno (Commit volátil/reciente)'}")
-                lineas.append(f"     Archivos: {', '.join(r['archivos']) if r['archivos'] else 'Desconocidos'}")
+                lineas.append(
+                    f"     Versión : {', '.join(r['tags']) if r['tags'] else 'Ninguno (Commit volátil/reciente)'}"
+                )
+                lineas.append(
+                    f"     Archivos: {', '.join(r['archivos']) if r['archivos'] else 'Desconocidos'}"
+                )
                 lineas.append("")
         else:
             lineas.append("  [!] No se encontraron commits que coincidieran con el criterio.")
@@ -2290,25 +2543,53 @@ def generar_reporte(repo_path: str, historial: dict[str, Any], tags: list[dict[s
 # ENTRY POINT
 # ──────────────────────────────────────────────
 
+
 def main() -> None:
     """Función principal del analizador de repositorios Git."""
     parser = argparse.ArgumentParser(
         description="Analizador técnico offline de repositorio Git local."
     )
     parser.add_argument("repo_path", help="Ruta al repositorio Git local")
-    parser.add_argument("--output", "-o", help="Guardar reporte en archivo (.md o .txt)", default=None)
-    parser.add_argument("--search", "-s", help="Criterio de búsqueda (hash, texto descriptivo o fragmento de código)", default=None)
+    parser.add_argument(
+        "--output", "-o", help="Guardar reporte en archivo (.md o .txt)", default=None
+    )
+    parser.add_argument(
+        "--search",
+        "-s",
+        help="Criterio de búsqueda (hash, texto descriptivo o fragmento de código)",
+        default=None,
+    )
     args = parser.parse_args()
 
     repo_path = Path(args.repo_path).resolve()
 
+    base_results_dir = Path(__file__).parent / "results"
+    project_name = repo_path.name
+    results_dir = base_results_dir / project_name
+    results_dir.mkdir(parents=True, exist_ok=True)
+
     with Repo(str(repo_path)) as repo:
         print(f"[INFO] Analizando repositorio: {repo_path}")
 
-        historial   = obtener_historial(repo)
-        tags        = obtener_tags(repo)
-        comparacion = comparar_tags(repo, tags)
+        estado_anterior = cargar_estado(results_dir)
+        cambios = detectar_cambios(repo, estado_anterior)
+        info_cambios = generar_info_incremental(cambios)
 
+        print(f"[INFO] {info_cambios}")
+
+        if not cambios["hay_cambios"]:
+            print("[INFO] Análisis omitido. Ejecutando nuevamente para ver resultados.")
+            data_file = ruta_data_json(results_dir)
+            if data_file.exists():
+                print(f"[INFO] Datos consolidados disponibles en: {data_file.resolve()}")
+                html_file = ruta_reporte_html(results_dir)
+                if html_file.exists():
+                    print(f"[INFO] Reporte HTML disponible en: {html_file.resolve()}")
+            return
+
+        historial = obtener_historial(repo)
+        tags = obtener_tags(repo)
+        comparacion = comparar_tags(repo, tags)
         topologia = analizar_topologia_tags(repo, tags)
 
         busqueda = None
@@ -2318,50 +2599,54 @@ def main() -> None:
         reporte = generar_reporte(str(repo_path), historial, tags, comparacion, busqueda)
 
         print("[INFO] Generando grafo de tags y explorador de historial...")
-        grafo_html = generar_grafo_html(repo, tags, topologia, historial, busqueda)
 
-        print(reporte)
+        commits_data = historial["commits"]
+        hash_estado = cambios["hash_actual"]
+        hash_tags = cambios["hash_tags_actual"]
 
-        base_results_dir = Path(__file__).parent / "results"
-        project_name = repo_path.name
-        project_dir = base_results_dir / project_name
+        datos_estado = {
+            "tags": tags,
+            "historial": historial,
+            "topologia": topologia,
+            "commits_data": commits_data,
+            "comparacion": comparacion,
+        }
 
-        project_dir.mkdir(parents=True, exist_ok=True)
+        if _GITSEARCH_OK:
+            try:
+                t_gs_inicio = datetime.now()
+                panel_busqueda = _gs_generar_panel(commits_data)
+                delta_ms = int((datetime.now() - t_gs_inicio).total_seconds() * 1000)
+                print(f"[GitSearch] Panel de búsqueda preparado ({delta_ms} ms).")
+            except Exception as _gs_err:
+                print(f"[WARN] GitSearch panel no pudo generarse: {_gs_err}")
+                panel_busqueda = ""
+        else:
+            panel_busqueda = ""
 
-        analisis_count = 1
-        while (project_dir / f"analisis_{analisis_count}").exists():
-            analisis_count += 1
+        grafo_html, nodes, edges = generar_grafo_html(
+            repo, tags, topologia, historial, busqueda, panel_busqueda
+        )
 
-        analysis_dir = project_dir / f"analisis_{analisis_count}"
-        analysis_dir.mkdir(parents=True, exist_ok=True)
+        guardar_estado(results_dir, datos_estado, hash_estado, hash_tags, nodes, edges)
+        print(f"[INFO] Estado guardado en: {ruta_data_json(results_dir).resolve()}")
 
-        output_filename = Path(args.output).name if args.output else "reporte.txt"
-
-        output_path = analysis_dir / output_filename
-        grafo_path = analysis_dir / "reporte_grafo.html"
+        output_filename = Path(args.output).name if args.output else "reporte.md"
+        output_path = ruta_reporte_md(results_dir)
+        if args.output:
+            output_path = results_dir / output_filename
 
         with output_path.open("w", encoding="utf-8", errors="replace") as f:
             f.write(reporte)
         print(f"[INFO] Reporte guardado en: {output_path.resolve()}")
 
-        if _GITSEARCH_OK:
-            try:
-                t_gs_inicio = datetime.now()
-                panel_busqueda = _gs_generar_panel(historial["commits"])
-                grafo_html = grafo_html.replace("<!-- GITSEARCH_PANEL -->", panel_busqueda)
-                delta_ms = int((datetime.now() - t_gs_inicio).total_seconds() * 1000)
-                print(f"[GitSearch] Panel de búsqueda inyectado en HTML ({delta_ms} ms).")
-            except Exception as _gs_err:
-                print(f"[WARN] GitSearch panel no pudo generarse: {_gs_err}")
-                grafo_html = grafo_html.replace("<!-- GITSEARCH_PANEL -->", "")
-        else:
-            grafo_html = grafo_html.replace("<!-- GITSEARCH_PANEL -->", "")
-
+        grafo_path = ruta_reporte_html(results_dir)
         with grafo_path.open("w", encoding="utf-8", errors="replace") as f:
             f.write(grafo_html)
         print(f"[INFO] Grafo interactivo guardado en: {grafo_path.resolve()}")
 
+        print(reporte)
+
 
 if __name__ == "__main__":
     main()
-

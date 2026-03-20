@@ -13,6 +13,8 @@ from typing import Any
 
 from git import Repo
 
+from gitsearch import __version__
+
 DATA_FILENAME = "data.json"
 REPORTE_HTML = "reporte.html"
 REPORTE_MD = "reporte.md"
@@ -83,10 +85,11 @@ def detectar_cambios(repo: Repo, estado_anterior: dict[str, Any] | None) -> dict
     """
     hash_actual = obtener_hash_estado_repo(repo)
 
-    if estado_anterior is None:
+    if estado_anterior is None or estado_anterior.get("version") != __version__:
+        tipo = ["primera_ejecucion"] if estado_anterior is None else ["nueva_version_analizador"]
         return {
             "hay_cambios": True,
-            "tipo_cambios": ["primera_ejecucion"],
+            "tipo_cambios": tipo,
             "hash_actual": hash_actual,
             "hash_tags_actual": hash_actual,
             "commits_nuevos": [],
@@ -153,7 +156,7 @@ def guardar_estado(
     tags_limpios = _limpiar_string(tags_data)
 
     estado = {
-        "version": "1.0",
+        "version": __version__,
         "fecha_ultimo_analisis": datetime.now().isoformat(),
         "hash_estado_repo": hash_estado_repo,
         "hash_tags": hash_tags,
@@ -175,11 +178,19 @@ def guardar_estado(
     }
 
     try:
-        with data_file.open("w", encoding="utf-8") as f:
+        tmp_file = data_file.with_suffix(".json.tmp")
+        with tmp_file.open("w", encoding="utf-8") as f:
             json.dump(estado, f, ensure_ascii=False, indent=2)
+        
+        tmp_file.replace(data_file)
         return True
     except OSError as e:
         print(f"[ERROR] No se pudo guardar estado: {e}")
+        try:
+            if "tmp_file" in locals() and tmp_file.exists():
+                tmp_file.unlink()
+        except OSError:
+            pass
         return False
 
 

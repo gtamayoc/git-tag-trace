@@ -2584,19 +2584,26 @@ def main() -> None:
 
         estado_anterior = cargar_estado(results_dir)
         cambios = detectar_cambios(repo, estado_anterior)
+
+        html_file = ruta_reporte_html(results_dir)
+        output_filename = Path(args.output).name if args.output else "reporte.md"
+        output_path = results_dir / output_filename if args.output else ruta_reporte_md(results_dir)
+        data_file = ruta_data_json(results_dir)
+
+        archivos_faltantes = not html_file.exists() or not output_path.exists() or not data_file.exists()
+
+        if archivos_faltantes and not cambios["hay_cambios"]:
+            cambios["hay_cambios"] = True
+            cambios["tipo_cambios"].append("archivos_faltantes")
+
         info_cambios = generar_info_incremental(cambios)
 
-        print(f"[INFO] {info_cambios}")
-
         if not cambios["hay_cambios"]:
-            print("[INFO] Análisis omitido. Ejecutando nuevamente para ver resultados.")
-            data_file = ruta_data_json(results_dir)
-            if data_file.exists():
-                print(f"[INFO] Datos consolidados disponibles en: {data_file.resolve()}")
-                html_file = ruta_reporte_html(results_dir)
-                if html_file.exists():
-                    print(f"[INFO] Reporte HTML disponible en: {html_file.resolve()}")
+            print(f"[INFO] Repositorio no modificado. Resultados actuales válidos en: {html_file.resolve()}")
             return
+
+        print(f"[INFO] {info_cambios}")
+        print("[INFO] Analizando repositorio y generando artefactos...")
 
         historial = obtener_historial(repo)
         tags = obtener_tags(repo)

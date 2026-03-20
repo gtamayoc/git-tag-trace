@@ -3,6 +3,7 @@
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from gitsearch import __version__
 from gitsearch.incremental import (
     DATA_FILENAME,
     REPORTE_HTML,
@@ -147,6 +148,7 @@ class TestDetectarCambios:
         repo.iter_commits.return_value = iter([])
 
         estado_anterior = {
+            "version": __version__,
             "head_sha": "xyz789",
             "hash_estado_repo": "xyz789",
             "hash_tags": "xyz789",
@@ -164,6 +166,7 @@ class TestDetectarCambios:
             repo = MagicMock()
 
             estado_anterior = {
+                "version": __version__,
                 "head_sha": "abc123",
                 "hash_estado_repo": "abcd1234efgh5678",
                 "hash_tags": "abcd1234efgh5678",

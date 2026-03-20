@@ -11,6 +11,7 @@ import json
 import os
 import sys
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
@@ -58,11 +59,46 @@ except ImportError:
 # ──────────────────────────────────────────────
 
 
+def _fetch_diff_batch(shas: list[str], repo_path: str) -> dict[str, str]:
+    """Fetch diffs for multiple commits in a single git command using git log -p."""
+    from git import Repo
+
+    diff_map: dict[str, str] = {}
+    try:
+        repo_local = Repo(repo_path)
+        batch_size = 50
+        for i in range(0, len(shas), batch_size):
+            batch = shas[i : i + batch_size]
+            try:
+                raw = repo_local.git.log(
+                    "--all", "--no-walk", *batch, "-p", "--stat", "--no-color", "--format="
+                )
+                commits_in_batch = raw.split("commit ")
+                for commit_block in commits_in_batch[1:]:
+                    lines = commit_block.split("\n")
+                    if not lines:
+                        continue
+                    sha = lines[0].strip()
+                    if len(sha) >= 7:
+                        sha = sha[:7]
+                    diff_content = "commit " + commit_block
+                    if len(diff_content) > 6000:
+                        diff_content = (
+                            diff_content[:6000] + "\n\n... (diff truncado por tamaño) ..."
+                        )
+                    diff_map[sha] = diff_content
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return diff_map
+
+
 def obtener_historial(repo: Repo) -> dict[str, Any]:
     STASH_PREFIXES = (
-        "On ",  # "On main: ..."
-        "index on ",  # "index on main: ..."
-        "WIP on ",  # "WIP on main: ..."
+        "On ",
+        "index on ",
+        "WIP on ",
         "untracked files on ",
     )
 
@@ -71,7 +107,6 @@ def obtener_historial(repo: Repo) -> dict[str, Any]:
         return any(msg.startswith(p.lower()) for p in STASH_PREFIXES)
 
     try:
-        # Iterar solo sobre heads y remotes
         refs = list(repo.heads) + list(repo.remotes[0].refs if repo.remotes else [])
         seen: set[str] = set()
         commits = []
@@ -90,41 +125,71 @@ def obtener_historial(repo: Repo) -> dict[str, Any]:
     autores = Counter(c.author.name for c in commits)
     fechas = sorted(c.committed_datetime for c in commits)
 
-    print(f"[INFO] Procesando metadatos para {len(commits)} commits...")
-    lista: list[dict[str, Any]] = []
+    total_commits = len(commits)
+    print(f"[INFO] Procesando {total_commits} commits (diffs en paralelo)...")
 
-    git_show = repo.git.show
+    shas_all = [c.hexsha for c in commits]
+
+    repo_path = str(repo.working_dir)
+    diff_cache: dict[str, str] = {}
+
+    max_workers = min(8, (os.cpu_count() or 4))
+    batch_size = 100
+    diff_futures = []
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        for i in range(0, len(shas_all), batch_size):
+            batch = shas_all[i : i + batch_size]
+            future = executor.submit(_fetch_diff_batch, batch, repo_path)
+            diff_futures.append(future)
+
+        for completed, future in enumerate(as_completed(diff_futures), start=1):
+            try:
+                result = future.result()
+                diff_cache.update(result)
+            except Exception:
+                pass
+            if completed % 5 == 0 or completed == len(diff_futures):
+                pct = int(completed / len(diff_futures) * 100)
+                print(
+                    f"\r[INFO] Diffs: {completed}/{len(diff_futures)} ({pct}%)", end="", flush=True
+                )
+
+    print()
+
     from_timestamp = datetime.fromtimestamp
     strftime_fmt = "%Y-%m-%d %H:%M"
 
-    for c in commits:
+    lista: list[dict[str, Any]] = []
+    for idx, c in enumerate(commits):
+        if idx % 500 == 0 and idx > 0:
+            print(
+                f"[INFO] Progreso commits: {idx}/{total_commits} ({int(idx / total_commits * 100)}%)"
+            )
+
         msg_lines = c.message.strip().splitlines()
         first_line = msg_lines[0][:80] if msg_lines else "Sin mensaje"
 
         commit_hexsha = c.hexsha
-        autor_name = c.author.name
-        committed_date = c.committed_date
         parents_hashes = [p.hexsha for p in c.parents]
 
-        diff_preview = ""
-        try:
-            diff_preview = git_show(
-                commit_hexsha, "-p", "--stat", "--no-color", "--format=", max_count=1
-            )
-            if len(diff_preview) > 6000:
-                diff_preview = (
-                    diff_preview[:6000]
-                    + "\n\n... (diff truncado por tamaño, mostrando primeros 6000 caracteres) ..."
+        diff_preview = diff_cache.get(commit_hexsha[:7], "")
+        if not diff_preview:
+            try:
+                diff_preview = repo.git.show(
+                    commit_hexsha, "-p", "--stat", "--no-color", "--format=", max_count=1
                 )
-        except Exception:
-            diff_preview = "(Error cargando diff)"
+                if len(diff_preview) > 6000:
+                    diff_preview = diff_preview[:6000] + "\n\n... (diff truncado por tamaño) ..."
+            except Exception:
+                diff_preview = "(Error cargando diff)"
 
         lista.append(
             {
                 "hash": commit_hexsha[:7],
                 "full_hash": commit_hexsha,
-                "autor": autor_name,
-                "fecha": from_timestamp(committed_date).strftime(strftime_fmt),
+                "autor": c.author.name,
+                "fecha": from_timestamp(c.committed_date).strftime(strftime_fmt),
                 "mensaje": first_line,
                 "mensaje_full": c.message.strip(),
                 "parents": parents_hashes,
@@ -442,6 +507,92 @@ def calcular_commits_exclusivos_tag(
         }
 
 
+def calcular_commits_exclusivos_batch(
+    repo_path: str,
+    tasks: list[tuple[str, str, str]],
+) -> dict[str, dict[str, Any]]:
+    """Calculate exclusive commits for multiple tag pairs in parallel."""
+    from git import Repo
+
+    from_timestamp = datetime.fromtimestamp
+    strftime_fmt = "%Y-%m-%d %H:%M"
+
+    results: dict[str, dict[str, Any]] = {}
+
+    for sha, padre_sha, key in tasks:
+        try:
+            repo_local = Repo(repo_path)
+            commit_tag = repo_local.commit(sha)
+            commit_padre_tag = repo_local.commit(padre_sha)
+
+            bases = repo_local.merge_base(commit_padre_tag, commit_tag)
+            base = bases[0] if bases else commit_padre_tag
+
+            commits = list(
+                repo_local.iter_commits(f"{base.hexsha}..{commit_tag.hexsha}", max_count=5000)
+            )
+
+            commits_data = []
+            autores_set = set()
+            archivos_set = set()
+
+            for c in commits:
+                autores_set.add(c.author.name)
+                message = c.message
+                commits_data.append(
+                    {
+                        "hash": c.hexsha[:7],
+                        "full_hash": c.hexsha,
+                        "autor": c.author.name,
+                        "mensaje": message.strip().splitlines()[0][:80] if message else "",
+                        "mensaje_full": message.strip() if message else "",
+                        "fecha": from_timestamp(c.committed_date).strftime(strftime_fmt),
+                        "parents": [p.hexsha[:7] for p in c.parents],
+                    }
+                )
+
+            try:
+                diff = base.diff(commit_tag)
+                for d in diff:
+                    if d.a_path:
+                        archivos_set.add(d.a_path)
+                    elif d.b_path:
+                        archivos_set.add(d.b_path)
+            except Exception:
+                pass
+
+            dias = 0
+            try:
+                delta = from_timestamp(commit_tag.committed_date) - from_timestamp(
+                    base.committed_date
+                )
+                dias = delta.days
+            except Exception:
+                pass
+
+            results[key] = {
+                "num_commits": len(commits),
+                "autores": sorted(autores_set),
+                "num_archivos": len(archivos_set),
+                "archivos": sorted(archivos_set),
+                "commits_list": commits_data,
+                "dias": dias,
+                "merge_base_sha": base.hexsha[:7],
+            }
+        except Exception:
+            results[key] = {
+                "num_commits": 0,
+                "autores": [],
+                "num_archivos": 0,
+                "archivos": [],
+                "commits_list": [],
+                "dias": 0,
+                "merge_base_sha": "N/A",
+            }
+
+    return results
+
+
 # ── 3d. Análisis topológico: aristas reales entre tags ───────────────────────
 
 
@@ -471,7 +622,6 @@ def analizar_topologia_tags(repo: Repo, tags: list[dict[str, Any]]) -> dict[str,
 
     print(f"[INFO] {len(tags)} tags en {len(sha_a_tags_list)} commits únicos. Leyendo grafo...")
 
-    # ── Lectura del grafo + decoraciones en DOS llamadas git totales ──────────
     raw = repo.git.log(
         "--all",
         "--topo-order",
@@ -510,12 +660,7 @@ def analizar_topologia_tags(repo: Repo, tags: list[dict[str, Any]]) -> dict[str,
             commit_cache[sha] = repo.commit(sha)
         return commit_cache[sha]
 
-    def es_ancestro_rapido(sha_a: str, sha_b: str) -> bool:
-        try:
-            repo.git.merge_base("--is-ancestor", sha_a, sha_b)
-            return True
-        except Exception:
-            return False
+    topo_index = {sha: i for i, sha in enumerate(topo_order)}
 
     resultado = {}
     for sha, tnames in sha_a_tags_list.items():
@@ -533,7 +678,18 @@ def analizar_topologia_tags(repo: Repo, tags: list[dict[str, Any]]) -> dict[str,
 
     tags_vistos_en_commit: dict[str, set[str]] = {}
 
+    print(f"[INFO] Resolviendo topología de {len(sha_a_tags_list)} tags...")
+    processed = 0
+
     for sha in reversed(topo_order):
+        processed += 1
+        if processed % 100 == 0:
+            print(
+                f"\r[INFO] Topología: {processed}/{len(topo_order)} commits procesados",
+                end="",
+                flush=True,
+            )
+
         tags_heredados = set()
         parents = parent_map.get(sha)
         if parents:
@@ -548,36 +704,80 @@ def analizar_topologia_tags(repo: Repo, tags: list[dict[str, Any]]) -> dict[str,
             if num_candidatos == 1:
                 padres_directos = candidatos
             elif num_candidatos > 1:
+                sha_to_parents = {s: set(parent_map.get(s, [])) for s in candidatos}
+                sha_to_idx = {s: topo_index.get(s, -1) for s in candidatos}
+
                 for cand_sha in candidatos:
-                    es_superado = any(
-                        otro_sha != cand_sha and es_ancestro_rapido(cand_sha, otro_sha)
-                        for otro_sha in candidatos
-                    )
-                    if not es_superado:
+                    cand_idx = sha_to_idx.get(cand_sha, -1)
+                    is_child_of_any_other = False
+                    for otro_sha in candidatos:
+                        if otro_sha == cand_sha:
+                            continue
+                        otro_idx = sha_to_idx.get(otro_sha, -1)
+                        if (
+                            otro_idx >= 0
+                            and cand_idx >= 0
+                            and cand_idx > otro_idx
+                            and otro_sha in sha_to_parents.get(cand_sha, set())
+                        ):
+                            is_child_of_any_other = True
+                            break
+                    if not is_child_of_any_other:
                         padres_directos.append(cand_sha)
 
             resultado[sha]["padres_shas"] = padres_directos
-
             tags_vistos_en_commit[sha] = {sha}
-
-            if padres_directos:
-                padre_commit = get_commit_cached(padres_directos[0])
-                stats = calcular_commits_exclusivos_tag(
-                    repo, resultado[sha]["commit"], padre_commit
-                )
-            else:
-                stats = {
-                    "num_commits": 0,
-                    "autores": [],
-                    "num_archivos": 0,
-                    "archivos": [],
-                    "commits_list": [],
-                    "dias": 0,
-                    "merge_base_sha": "(raíz)",
-                }
-            resultado[sha]["stats"] = stats
         else:
             tags_vistos_en_commit[sha] = tags_heredados
+
+    print()
+
+    stats_tasks: list[tuple[str, str, str]] = []
+    for sha, info in resultado.items():
+        padres = info.get("padres_shas", [])
+        if padres:
+            stats_tasks.append((sha, padres[0], sha))
+
+    if stats_tasks:
+        print(f"[INFO] Calculando stats en paralelo para {len(stats_tasks)} tags...")
+        repo_path = str(repo.working_dir)
+        max_workers = min(8, (os.cpu_count() or 4))
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = []
+            for i in range(0, len(stats_tasks), 20):
+                batch = stats_tasks[i : i + 20]
+                future = executor.submit(calcular_commits_exclusivos_batch, repo_path, batch)
+                futures.append(future)
+
+            for completed, future in enumerate(as_completed(futures), start=1):
+                try:
+                    batch_results = future.result()
+                    for key, stats in batch_results.items():
+                        if key in resultado:
+                            resultado[key]["stats"] = stats
+                except Exception as e:
+                    print(f"\n[WARN] Error en batch de stats: {e}")
+                if completed % 5 == 0 or completed == len(futures):
+                    pct = int(completed / len(futures) * 100)
+                    print(
+                        f"\r[INFO] Stats: {completed}/{len(futures)} batches ({pct}%)",
+                        end="",
+                        flush=True,
+                    )
+
+        print()
+    else:
+        for value in resultado.values():
+            value["stats"] = {
+                "num_commits": 0,
+                "autores": [],
+                "num_archivos": 0,
+                "archivos": [],
+                "commits_list": [],
+                "dias": 0,
+                "merge_base_sha": "(raíz)",
+            }
 
     aristas = sum(len(v["padres_shas"]) for v in resultado.values())
     print(f"[INFO] Topología completa: {aristas} aristas entre {len(resultado)} nodos de versión.")
@@ -1230,10 +1430,146 @@ def generar_grafo_html(
         }
         .copy-icon:hover { opacity: 1; background: var(--bg-hover); color: var(--text-primary); }
         .copy-icon svg { width: 12px; height: 12px; fill: currentColor; }
+
+        /* ── Loading Spinner ── */
+        #loading-overlay {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: var(--bg-color);
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            transition: opacity 0.4s ease;
+        }
+        #loading-overlay.fade-out {
+            opacity: 0;
+            pointer-events: none;
+        }
+        .spinner {
+            width: 48px; height: 48px;
+            border: 3px solid var(--border-subtle);
+            border-top-color: var(--text-primary);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        #loading-text {
+            margin-top: 16px;
+            color: var(--text-muted);
+            font-size: 0.82rem;
+            font-weight: 500;
+        }
+        #loading-progress {
+            width: 200px;
+            height: 3px;
+            background: var(--border-subtle);
+            border-radius: 2px;
+            margin-top: 12px;
+            overflow: hidden;
+        }
+        #loading-bar {
+            height: 100%;
+            background: var(--text-primary);
+            border-radius: 2px;
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        /* ── Keyboard shortcuts tooltip ── */
+        #shortcuts-hint {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: var(--panel-bg);
+            border: 1px solid var(--panel-border);
+            border-radius: var(--radius-md);
+            padding: 8px 12px;
+            font-size: 0.68rem;
+            color: var(--text-muted);
+            z-index: 100;
+            backdrop-filter: blur(12px);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+        #shortcuts-hint.visible { opacity: 1; }
+        #shortcuts-hint kbd {
+            background: var(--bg-raised);
+            border: 1px solid var(--border-normal);
+            border-radius: 3px;
+            padding: 1px 5px;
+            font-family: inherit;
+            margin: 0 2px;
+        }
+
+        /* ── Node hover animation ── */
+        .node-hover-glow {
+            filter: drop-shadow(0 0 8px var(--accent-primary));
+        }
+
+        /* ── Smooth transitions for panel ── */
+        .panel-nav .nav-item {
+            position: relative;
+        }
+        .panel-nav .nav-item::after {
+            content: '';
+            position: absolute;
+            bottom: -1px;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background: var(--text-primary);
+            transform: scaleX(0);
+            transition: transform 0.2s ease;
+        }
+        .panel-nav .nav-item.active::after {
+            transform: scaleX(1);
+        }
+
+        /* ── Toast notification ── */
+        #toast {
+            position: fixed;
+            bottom: 80px;
+            left: 50%;
+            transform: translateX(-50%) translateY(20px);
+            background: var(--bg-surface);
+            border: 1px solid var(--border-normal);
+            color: var(--text-primary);
+            padding: 10px 20px;
+            border-radius: var(--radius-md);
+            font-size: 0.80rem;
+            z-index: 3000;
+            opacity: 0;
+            transition: all 0.3s ease;
+            pointer-events: none;
+        }
+        #toast.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
     </style>
 </head>
 <body>
-    <!-- Barra superior GitSearch [VISUAL ONLY] -->
+    <!-- Loading Overlay -->
+    <div id="loading-overlay">
+        <div class="spinner"></div>
+        <div id="loading-text">Cargando grafo...</div>
+        <div id="loading-progress"><div id="loading-bar"></div></div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast"></div>
+
+    <!-- Keyboard Shortcuts Hint -->
+    <div id="shortcuts-hint">
+        <kbd>T</kbd> Tema &nbsp; <kbd>ESC</kbd> Cerrar &nbsp; <kbd>/</kbd> Buscar
+    </div>
+
+    <!-- Barra superior GitSearch -->
     <div id="gs-topbar">
         <div class="gs-brand">
             <div class="gs-brand-dot"></div>
@@ -1245,7 +1581,7 @@ def generar_grafo_html(
 
     <div id="mynetwork"></div>
 
-    <!-- Panel de leyenda del grafo [Gap #5: dinamico con estadisticas reales] -->
+    <!-- Panel de leyenda del grafo -->
     <div class="intro-panel" id="intro-panel">
         <h2 style="margin:0 0 4px; font-size:0.88rem; font-weight:600; color:var(--text-primary);">Mapa de Versiones</h2>
         <div style="font-size:0.72rem; color:var(--text-muted); margin-bottom:12px;" id="intro-subtitle">Cargando...</div>
@@ -1293,11 +1629,10 @@ def generar_grafo_html(
     </div>
 
     <div class="controls">
-        <button class="btn-round" onclick="network.moveTo({scale: network.getScale()*1.5, animation:true})">+</button>
-        <button class="btn-round" onclick="network.moveTo({scale: network.getScale()/1.5, animation:true})">-</button>
-        <button class="btn-round" onclick="network.fit({animation:true})">⛶</button>
-
-        <button class="btn-round" onclick="toggleTheme()" title="Cambiar Tema (Claro / Oscuro)">🌓</button>
+        <button class="btn-round" onclick="zoomIn()" title="Acercar">+</button>
+        <button class="btn-round" onclick="zoomOut()" title="Alejar">-</button>
+        <button class="btn-round" onclick="network.fit({animation:true})" title="Ajustar vista">⛶</button>
+        <button class="btn-round" onclick="toggleTheme()" title="Cambiar Tema (T)">🌓</button>
     </div>
 
     <!-- Modal Commit Detail -->
@@ -1357,6 +1692,31 @@ def generar_grafo_html(
 
             if (currentTheme === 'light') document.documentElement.classList.add('gs-theme-light');
 
+            // ── Loading & UI helpers ──
+            function setLoadingProgress(pct, text) {
+                const bar = document.getElementById('loading-bar');
+                const txt = document.getElementById('loading-text');
+                if (bar) bar.style.width = pct + '%';
+                if (txt && text) txt.textContent = text;
+            }
+
+            function hideLoading() {
+                const overlay = document.getElementById('loading-overlay');
+                if (overlay) {
+                    overlay.classList.add('fade-out');
+                    setTimeout(() => overlay.style.display = 'none', 400);
+                }
+            }
+
+            function showToast(message, duration = 2500) {
+                const toast = document.getElementById('toast');
+                if (toast) {
+                    toast.textContent = message;
+                    toast.classList.add('show');
+                    setTimeout(() => toast.classList.remove('show'), duration);
+                }
+            }
+
             function toggleTheme() {
                 currentTheme = currentTheme === 'dark' ? 'light' : 'dark';
                 localStorage.setItem('gs_theme', currentTheme);
@@ -1368,11 +1728,45 @@ def generar_grafo_html(
                     document.documentElement.classList.remove('gs-theme-light');
                 }
                 updateNetworkColors();
+                showToast('Tema: ' + (currentTheme === 'dark' ? 'Oscuro' : 'Claro'));
             }
+
+            function zoomIn() {
+                network.moveTo({scale: network.getScale() * 1.3, animation: {duration: 200, easingFunction: 'easeInOutQuad'}});
+            }
+
+            function zoomOut() {
+                network.moveTo({scale: network.getScale() / 1.3, animation: {duration: 200, easingFunction: 'easeInOutQuad'}});
+            }
+
+            // ── Keyboard shortcuts ──
+            document.addEventListener('keydown', function(e) {
+                if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+                if (e.key === 't' || e.key === 'T') toggleTheme();
+                if (e.key === 'Escape') {
+                    hideCommitModal();
+                    closePanel();
+                }
+                if (e.key === '/') {
+                    e.preventDefault();
+                    if (typeof gsTogglePanel === 'function') gsTogglePanel();
+                }
+            });
+
+            // Show shortcuts hint briefly on load
+            setTimeout(() => {
+                const hint = document.getElementById('shortcuts-hint');
+                if (hint) {
+                    hint.classList.add('visible');
+                    setTimeout(() => hint.classList.remove('visible'), 4000);
+                }
+            }, 1500);
 
             function getEdgeWidth(nCommits) {
                 return 1.0 + Math.min((nCommits || 0) * 0.1, 3.5);
             }
+
+            setLoadingProgress(20, 'Inicializando red...');
 
             nodes = new vis.DataSet(nodesData.map(n => {
                 const pos = savedPositions[n.id];
@@ -1443,6 +1837,24 @@ def generar_grafo_html(
                 enabled: false
             }
         });
+
+        setLoadingProgress(70, 'Renderizando nodos...');
+
+        network.on('init', function() {
+            setLoadingProgress(90, 'Finalizando...');
+        });
+
+        network.once('stabilizationIterationsDone', function() {
+            setLoadingProgress(100, '¡Listo!');
+            setTimeout(hideLoading, 300);
+            showToast(`${nodesData.length} versiones cargadas`, 2000);
+        });
+
+        // Fallback: hide loading after 5 seconds max
+        setTimeout(() => {
+            setLoadingProgress(100, '¡Listo!');
+            hideLoading();
+        }, 5000);
 
         // Gap #5: Poblar leyenda dinamica con estadisticas reales del grafo
         (function populateDynamicLegend() {
@@ -2590,7 +3002,9 @@ def main() -> None:
         output_path = results_dir / output_filename if args.output else ruta_reporte_md(results_dir)
         data_file = ruta_data_json(results_dir)
 
-        archivos_faltantes = not html_file.exists() or not output_path.exists() or not data_file.exists()
+        archivos_faltantes = (
+            not html_file.exists() or not output_path.exists() or not data_file.exists()
+        )
 
         if archivos_faltantes and not cambios["hay_cambios"]:
             cambios["hay_cambios"] = True
@@ -2599,7 +3013,9 @@ def main() -> None:
         info_cambios = generar_info_incremental(cambios)
 
         if not cambios["hay_cambios"]:
-            print(f"[INFO] Repositorio no modificado. Resultados actuales válidos en: {html_file.resolve()}")
+            print(
+                f"[INFO] Repositorio no modificado. Resultados actuales válidos en: {html_file.resolve()}"
+            )
             return
 
         print(f"[INFO] {info_cambios}")

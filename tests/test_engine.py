@@ -3,6 +3,7 @@
 from unittest.mock import MagicMock, patch
 
 from gitsearch.engine import buscar
+from gitsearch.strategy import EstrategiaGit
 
 
 class TestBuscar:
@@ -17,12 +18,9 @@ class TestBuscar:
         from gitsearch.filters import FiltroInvalido
 
         mock_validar.side_effect = FiltroInvalido("Test error")
-        mock_seleccionar.return_value = {
-            "modo": "error",
-            "descripcion": "",
-            "flags_base": [],
-            "flags_contenido": []
-        }
+        mock_seleccionar.return_value = EstrategiaGit(
+            modo="error", descripcion="", flags_base=[], flags_contenido=[]
+        )
 
         repo = MagicMock()
         result = buscar(repo, {"texto": "test"})
@@ -37,18 +35,10 @@ class TestBuscar:
         self, mock_seleccionar: MagicMock, mock_validar: MagicMock
     ) -> None:
         """Test returns empty results when no search criteria."""
-        mock_validar.return_value = {
-            "texto": "",
-            "autor": "",
-            "desde": "",
-            "hasta": ""
-        }
-        mock_seleccionar.return_value = {
-            "modo": "grep",
-            "descripcion": "Test",
-            "flags_base": ["--all"],
-            "flags_contenido": []
-        }
+        mock_validar.return_value = {"texto": "", "autor": "", "desde": "", "hasta": ""}
+        mock_seleccionar.return_value = EstrategiaGit(
+            modo="grep", descripcion="Test", flags_base=["--all"], flags_contenido=[]
+        )
 
         repo = MagicMock()
         result = buscar(repo, {})
@@ -62,18 +52,13 @@ class TestBuscar:
         self, mock_seleccionar: MagicMock, mock_validar: MagicMock
     ) -> None:
         """Test returns empty when git returns no matches."""
-        mock_validar.return_value = {
-            "texto": "nonexistent",
-            "autor": "",
-            "desde": "",
-            "hasta": ""
-        }
-        mock_seleccionar.return_value = {
-            "modo": "grep",
-            "descripcion": "Buscar nonexistent",
-            "flags_base": ["--all", "--max-count=2000"],
-            "flags_contenido": ["--grep=nonexistent", "-i", "--format=%H"]
-        }
+        mock_validar.return_value = {"texto": "nonexistent", "autor": "", "desde": "", "hasta": ""}
+        mock_seleccionar.return_value = EstrategiaGit(
+            modo="grep",
+            descripcion="Buscar nonexistent",
+            flags_base=["--all", "--max-count=2000"],
+            flags_contenido=["--grep=nonexistent", "-i", "--format=%H"],
+        )
 
         repo = MagicMock()
         repo.git.log.return_value = ""
@@ -90,18 +75,10 @@ class TestBuscar:
         self, mock_seleccionar: MagicMock, mock_validar: MagicMock
     ) -> None:
         """Test handles git exceptions gracefully."""
-        mock_validar.return_value = {
-            "texto": "test",
-            "autor": "",
-            "desde": "",
-            "hasta": ""
-        }
-        mock_seleccionar.return_value = {
-            "modo": "grep",
-            "descripcion": "Test",
-            "flags_base": ["--all"],
-            "flags_contenido": []
-        }
+        mock_validar.return_value = {"texto": "test", "autor": "", "desde": "", "hasta": ""}
+        mock_seleccionar.return_value = EstrategiaGit(
+            modo="grep", descripcion="Test", flags_base=["--all"], flags_contenido=[]
+        )
 
         repo = MagicMock()
         repo.git.log.side_effect = Exception("Git error")
@@ -121,14 +98,20 @@ class TestBuscar:
             "texto": "test",
             "autor": "developer",
             "desde": "2024-01-01",
-            "hasta": "2024-12-31"
+            "hasta": "2024-12-31",
         }
-        mock_seleccionar.return_value = {
-            "modo": "grep",
-            "descripcion": "Test",
-            "flags_base": ["--all", "--author=developer", "--since=2024-01-01", "--until=2024-12-31", "--max-count=2000"],
-            "flags_contenido": ["--grep=test", "-i", "--format=%H"]
-        }
+        mock_seleccionar.return_value = EstrategiaGit(
+            modo="grep",
+            descripcion="Test",
+            flags_base=[
+                "--all",
+                "--author=developer",
+                "--since=2024-01-01",
+                "--until=2024-12-31",
+                "--max-count=2000",
+            ],
+            flags_contenido=["--grep=test", "-i", "--format=%H"],
+        )
 
         repo = MagicMock()
         repo.git.log.return_value = ""
@@ -143,18 +126,13 @@ class TestBuscar:
         self, mock_seleccionar: MagicMock, mock_validar: MagicMock
     ) -> None:
         """Test processes found commits correctly."""
-        mock_validar.return_value = {
-            "texto": "test",
-            "autor": "",
-            "desde": "",
-            "hasta": ""
-        }
-        mock_seleccionar.return_value = {
-            "modo": "grep",
-            "descripcion": "Buscar test",
-            "flags_base": ["--all", "--max-count=2000"],
-            "flags_contenido": ["--grep=test", "-i", "--format=%H"]
-        }
+        mock_validar.return_value = {"texto": "test", "autor": "", "desde": "", "hasta": ""}
+        mock_seleccionar.return_value = EstrategiaGit(
+            modo="grep",
+            descripcion="Buscar test",
+            flags_base=["--all", "--max-count=2000"],
+            flags_contenido=["--grep=test", "-i", "--format=%H"],
+        )
 
         commit_mock = MagicMock()
         commit_mock.hexsha = "abc123def456789012345678901234567890"
@@ -174,22 +152,12 @@ class TestBuscar:
 
     @patch("gitsearch.engine.validar_y_normalizar")
     @patch("gitsearch.engine.seleccionar_estrategia")
-    def test_maneja_topologia(
-        self, mock_seleccionar: MagicMock, mock_validar: MagicMock
-    ) -> None:
+    def test_maneja_topologia(self, mock_seleccionar: MagicMock, mock_validar: MagicMock) -> None:
         """Test processes topologia parameter correctly."""
-        mock_validar.return_value = {
-            "texto": "test",
-            "autor": "",
-            "desde": "",
-            "hasta": ""
-        }
-        mock_seleccionar.return_value = {
-            "modo": "grep",
-            "descripcion": "Test",
-            "flags_base": ["--all"],
-            "flags_contenido": []
-        }
+        mock_validar.return_value = {"texto": "test", "autor": "", "desde": "", "hasta": ""}
+        mock_seleccionar.return_value = EstrategiaGit(
+            modo="grep", descripcion="Test", flags_base=["--all"], flags_contenido=[]
+        )
 
         topologia = {
             "abc123def456789012345678901234567890": {
@@ -198,7 +166,7 @@ class TestBuscar:
                     "commits_list": [
                         {"hash": "def4567", "full_hash": "def456789012345678901234567890123456"}
                     ]
-                }
+                },
             }
         }
 
@@ -223,18 +191,10 @@ class TestBuscar:
         self, mock_seleccionar: MagicMock, mock_validar: MagicMock
     ) -> None:
         """Test handles commit without parents correctly."""
-        mock_validar.return_value = {
-            "texto": "test",
-            "autor": "",
-            "desde": "",
-            "hasta": ""
-        }
-        mock_seleccionar.return_value = {
-            "modo": "grep",
-            "descripcion": "Test",
-            "flags_base": ["--all"],
-            "flags_contenido": []
-        }
+        mock_validar.return_value = {"texto": "test", "autor": "", "desde": "", "hasta": ""}
+        mock_seleccionar.return_value = EstrategiaGit(
+            modo="grep", descripcion="Test", flags_base=["--all"], flags_contenido=[]
+        )
 
         commit_mock = MagicMock()
         commit_mock.hexsha = "abc123def456789012345678901234567890"
@@ -257,18 +217,10 @@ class TestBuscar:
         self, mock_seleccionar: MagicMock, mock_validar: MagicMock
     ) -> None:
         """Test results are sorted by date descending."""
-        mock_validar.return_value = {
-            "texto": "test",
-            "autor": "",
-            "desde": "",
-            "hasta": ""
-        }
-        mock_seleccionar.return_value = {
-            "modo": "grep",
-            "descripcion": "Test",
-            "flags_base": ["--all"],
-            "flags_contenido": []
-        }
+        mock_validar.return_value = {"texto": "test", "autor": "", "desde": "", "hasta": ""}
+        mock_seleccionar.return_value = EstrategiaGit(
+            modo="grep", descripcion="Test", flags_base=["--all"], flags_contenido=[]
+        )
 
         commit1 = MagicMock()
         commit1.hexsha = "aaa123def456789012345678901234567890"
@@ -283,7 +235,9 @@ class TestBuscar:
         commit2.message = "Newer commit"
 
         repo = MagicMock()
-        repo.git.log.return_value = "aaa123def456789012345678901234567890\nbbb123def456789012345678901234567890"
+        repo.git.log.return_value = (
+            "aaa123def456789012345678901234567890\nbbb123def456789012345678901234567890"
+        )
         repo.commit.side_effect = [commit1, commit2]
 
         result = buscar(repo, {"texto": "test"})
@@ -298,18 +252,10 @@ class TestBuscar:
         self, mock_seleccionar: MagicMock, mock_validar: MagicMock
     ) -> None:
         """Test handles diff calculation with parents correctly."""
-        mock_validar.return_value = {
-            "texto": "test",
-            "autor": "",
-            "desde": "",
-            "hasta": ""
-        }
-        mock_seleccionar.return_value = {
-            "modo": "grep",
-            "descripcion": "Test",
-            "flags_base": ["--all"],
-            "flags_contenido": []
-        }
+        mock_validar.return_value = {"texto": "test", "autor": "", "desde": "", "hasta": ""}
+        mock_seleccionar.return_value = EstrategiaGit(
+            modo="grep", descripcion="Test", flags_base=["--all"], flags_contenido=[]
+        )
 
         diff_mock = MagicMock()
         diff_mock.a_path = "file1.py"

@@ -47,6 +47,7 @@ ignore = [
     "BLE001",     # blind except (existing codebase)
     "T201",       # print found (existing codebase)
     "PLR0912",    # too many branches
+    "PLR0913",    # too many arguments
     "PLR0915",    # too many statements
     "C901",       # too complex
     "ANN401",     # dynamically typed Any
@@ -87,5 +88,4 @@ error-on-warning = true
 python-version = "3.11"
 
 [tool.ty.rules]
-possibly-unresolved-reference = "warn"
 unused-ignore-comment = "warn"

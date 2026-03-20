@@ -7,23 +7,28 @@ de commits antes de analizar diffs (que es la operación más costosa).
 Nunca escribe en el repositorio. Solo lectura.
 """
 
+from dataclasses import dataclass, field
 from typing import Any
 
 
-def seleccionar_estrategia(params: dict[str, Any]) -> dict[str, Any]:
+@dataclass
+class EstrategiaGit:
+    """Estrategia de búsqueda seleccionada para git log."""
+
+    modo: str
+    descripcion: str
+    flags_base: list[str] = field(default_factory=list)
+    flags_contenido: list[str] = field(default_factory=list)
+
+
+def seleccionar_estrategia(params: dict[str, Any]) -> EstrategiaGit:
     """
     Dado un dict de parámetros normalizados (de filters.py), determina:
         - el modo definitivo (s / g / grep / l)
         - el orden de los flags git
         - una descripción legible de la estrategia elegida
 
-    Retorna dict:
-        {
-          "modo":        str,   # modo final elegido
-          "descripcion": str,   # texto legible para logs
-          "flags_base":  list,  # flags de fecha/autor a aplicar PRIMERO
-          "flags_contenido": list,  # flags de diff/texto a aplicar DESPUÉS
-        }
+    Retorna EstrategiaGit con los flags y descripción.
     """
     texto: str = params.get("texto", "").strip()
     modo: str = params.get("modo", "auto")
@@ -73,9 +78,9 @@ def seleccionar_estrategia(params: dict[str, Any]) -> dict[str, Any]:
         flags_contenido = [f"-L{rango}", "--format=%H"]
         descripcion = f"Trazabilidad (-L): historia de '{funcion or texto}' en {archivo}"
 
-    return {
-        "modo": modo,
-        "descripcion": descripcion,
-        "flags_base": flags_base,
-        "flags_contenido": flags_contenido,
-    }
+    return EstrategiaGit(
+        modo=modo,
+        descripcion=descripcion,
+        flags_base=flags_base,
+        flags_contenido=flags_contenido,
+    )

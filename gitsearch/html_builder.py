@@ -45,7 +45,7 @@ def generar_panel_busqueda(commits_data: list[dict[str, Any]]) -> str:
     --gs-radius-md:  8px;
     --gs-radius-lg:  12px;
     --gs-radius-pill: 20px;
-    --gs-transition: 0.15s ease;
+    --gs-transition: 0.15s cubic-bezier(0.2, 0, 0, 1);
     --gs-transition-panel: 0.32s cubic-bezier(0.4, 0, 0.2, 1);
   }}
 
@@ -336,6 +336,7 @@ def generar_panel_busqueda(commits_data: list[dict[str, Any]]) -> str:
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    text-wrap: pretty;
   }}
 
   .gs-result-meta, .gs-result-files {{
@@ -396,6 +397,18 @@ def generar_panel_busqueda(commits_data: list[dict[str, Any]]) -> str:
     font-size: 0.78rem;
     text-align: center;
     padding: 32px 0;
+  }}
+
+  @keyframes gs-fade-in {{
+    from {{ opacity: 0; transform: translateY(6px); }}
+    to   {{ opacity: 1; transform: translateY(0); }}
+  }}
+  @keyframes gs-fade-out {{
+    from {{ opacity: 1; transform: translateY(0); }}
+    to   {{ opacity: 0; transform: translateY(4px); }}
+  }}
+  .gs-result-item {{
+    animation: gs-fade-in 0.2s cubic-bezier(0.2, 0, 0, 1) both;
   }}
 </style>
 
@@ -551,6 +564,7 @@ function gsRenderResults(resultados, texto, modo) {{
   gsResaltarNodosDeResultados(resultados);
 
   list.innerHTML = resultados.slice(0, 300).map((c, idx) => {{
+    const staggerDelay = Math.min(idx * 0.04, 0.5);
     const padreLinks = (c.parents || []).map((ph, i) => {{
       const pFull = (c.parent_full || [])[i] || ph;
       return `<span class="gs-parent-link" onclick="gsNavParent('${{gsEscape(pFull || ph)}}')">↑ ${{gsEscape(ph)}}</span>`;
@@ -567,7 +581,7 @@ function gsRenderResults(resultados, texto, modo) {{
       : '';
 
     return `
-      <div class="gs-result-item" id="gs-item-${{idx}}" onclick="gsSelectResult(this, '${{gsEscape(c.full_hash || c.hash)}}', '${{gsEscape(tagSha || '')}}')">
+      <div class="gs-result-item" id="gs-item-${{idx}}" style="animation-delay:${{staggerDelay}}s" onclick="gsSelectResult(this, '${{gsEscape(c.full_hash || c.hash)}}', '${{gsEscape(tagSha || '')}}')">
         <div class="gs-result-hash" style="display:flex; align-items:center; gap:6px;">
           <span style="cursor:pointer; text-decoration:underline;" title="Abrir detalle" onclick="if(typeof showCommitModal !== 'undefined') {{ event.stopPropagation(); showCommitModal('${{gsEscape(c.full_hash || c.hash)}}'); }}">${{gsEscape(c.hash)}}</span>
           ${{typeof getCopyBtnHtml !== 'undefined' ? getCopyBtnHtml(c.full_hash || c.hash) : ''}}

@@ -40,7 +40,6 @@ def generar_panel_busqueda(commits_data: list[dict[str, Any]]) -> str:
    * Following: concentric radius, scale on press, responsive, tabular-nums
    */
 
-  /* Concentric radius system: base=6px, inner elements use smaller values */
   :root {{
     --gs-radius-sm:  4px;
     --gs-radius-md:  8px;
@@ -68,25 +67,26 @@ def generar_panel_busqueda(commits_data: list[dict[str, Any]]) -> str:
     gap: 6px;
     backdrop-filter: blur(16px);
     font-family: 'Inter', sans-serif;
-    transition-property: background, border-color, color, transform;
-    transition-duration: var(--gs-transition);
-    transition-timing-function: ease;
+    transition: background var(--gs-transition),
+                border-color var(--gs-transition),
+                color var(--gs-transition),
+                transform var(--gs-transition);
     letter-spacing: 0.01em;
     -webkit-font-smoothing: antialiased;
     min-height: 40px;
     min-width: 40px;
     justify-content: center;
   }}
+  #gs-toggle-btn:hover {{
+    background: var(--bg-hover);
+    border-color: var(--border-strong);
+    color: var(--accent-active);
+  }}
   #gs-toggle-btn:active {{
     transform: scale(0.96);
   }}
   body:has(.side-panel.open) #gs-toggle-btn {{
     top: 200px;
-  }}
-  #gs-toggle-btn:hover {{
-    background: var(--bg-hover);
-    border-color: var(--border-strong);
-    color: var(--accent-active);
   }}
 
   #gs-panel {{
@@ -103,8 +103,7 @@ def generar_panel_busqueda(commits_data: list[dict[str, Any]]) -> str:
     display: flex;
     flex-direction: column;
     transform: translateX(100%);
-    transition-property: transform;
-    transition-duration: var(--gs-transition-panel);
+    transition: transform var(--gs-transition-panel);
     font-family: 'Inter', sans-serif;
     -webkit-font-smoothing: antialiased;
   }}
@@ -157,8 +156,7 @@ def generar_panel_busqueda(commits_data: list[dict[str, Any]]) -> str:
     line-height: 1;
     padding: 8px;
     border-radius: var(--gs-radius-sm);
-    transition-property: color, background;
-    transition-duration: var(--gs-transition);
+    transition: color var(--gs-transition), background var(--gs-transition);
     min-width: 40px;
     min-height: 40px;
     display: flex;
@@ -187,8 +185,7 @@ def generar_panel_busqueda(commits_data: list[dict[str, Any]]) -> str:
     font-size: 0.80rem;
     outline: none;
     font-family: 'Inter', sans-serif;
-    transition-property: border-color;
-    transition-duration: var(--gs-transition);
+    transition: border-color var(--gs-transition);
     -webkit-font-smoothing: antialiased;
   }}
   .gs-input:focus {{ border-color: var(--border-strong); }}
@@ -204,8 +201,9 @@ def generar_panel_busqueda(commits_data: list[dict[str, Any]]) -> str:
     font-weight: 600;
     cursor: pointer;
     white-space: nowrap;
-    transition-property: background, border-color, transform;
-    transition-duration: var(--gs-transition);
+    transition: background var(--gs-transition),
+                border-color var(--gs-transition),
+                transform var(--gs-transition);
     min-height: 40px;
   }}
   .gs-btn-search:hover {{
@@ -224,8 +222,9 @@ def generar_panel_busqueda(commits_data: list[dict[str, Any]]) -> str:
     border-radius: var(--gs-radius-sm);
     font-size: 0.80rem;
     cursor: pointer;
-    transition-property: color, border-color, transform;
-    transition-duration: var(--gs-transition);
+    transition: color var(--gs-transition),
+                border-color var(--gs-transition),
+                transform var(--gs-transition);
     min-height: 40px;
     min-width: 40px;
     display: flex;
@@ -245,8 +244,10 @@ def generar_panel_busqueda(commits_data: list[dict[str, Any]]) -> str:
     font-size: 0.70rem;
     font-weight: 600;
     cursor: pointer;
-    transition-property: background, border-color, color, transform;
-    transition-duration: var(--gs-transition);
+    transition: background var(--gs-transition),
+                border-color var(--gs-transition),
+                color var(--gs-transition),
+                transform var(--gs-transition);
     min-height: 40px;
     display: flex;
     align-items: center;
@@ -286,8 +287,9 @@ def generar_panel_busqueda(commits_data: list[dict[str, Any]]) -> str:
     border: 1px solid var(--border-subtle);
     margin-bottom: 6px;
     cursor: pointer;
-    transition-property: border-color, background, transform;
-    transition-duration: var(--gs-transition);
+    transition: border-color var(--gs-transition),
+                background var(--gs-transition),
+                transform var(--gs-transition);
     background: transparent;
   }}
   .gs-result-item:hover {{
@@ -369,8 +371,9 @@ def generar_panel_busqueda(commits_data: list[dict[str, Any]]) -> str:
     padding: 6px 10px;
     cursor: pointer;
     text-decoration: none;
-    transition-property: color, border-color, transform;
-    transition-duration: var(--gs-transition);
+    transition: color var(--gs-transition),
+                border-color var(--gs-transition),
+                transform var(--gs-transition);
     min-height: 40px;
     display: inline-flex;
     align-items: center;

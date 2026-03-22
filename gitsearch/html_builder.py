@@ -35,10 +35,22 @@ def generar_panel_busqueda(commits_data: list[dict[str, Any]]) -> str:
      ══════════════════════════════════════════════════════════ -->
 
 <style>
-  /*
+   /*
    * ── GitSearch Panel UI — Themed & Polished
    * Following: concentric radius, scale on press, responsive, tabular-nums
    */
+
+  .sr-only {{
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }}
 
   :root {{
     --gs-radius-sm:  4px;
@@ -410,44 +422,53 @@ def generar_panel_busqueda(commits_data: list[dict[str, Any]]) -> str:
   .gs-result-item {{
     animation: gs-fade-in 0.2s cubic-bezier(0.2, 0, 0, 1) both;
   }}
+  @media (prefers-reduced-motion: reduce) {{
+    .gs-result-item {{
+      animation: none;
+    }}
+  }}
 </style>
 
 <!-- Botón flotante para abrir GitSearch -->
-<button id="gs-toggle-btn" onclick="gsTogglePanel()" title="Búsqueda avanzada en historial">
-  🔍 <span>GitSearch</span>
+<button id="gs-toggle-btn" onclick="gsTogglePanel()" aria-label="Abrir panel de búsqueda avanzada">
+  <span aria-hidden="true">🔍</span> <span>GitSearch</span>
 </button>
 
 <!-- Panel de búsqueda avanzada -->
-<div id="gs-panel">
+<div id="gs-panel" role="dialog" aria-label="Panel de búsqueda avanzada">
   <div id="gs-header">
-    <h2>🔍 Búsqueda Avanzada de Historial</h2>
-    <button id="gs-close" onclick="gsTogglePanel()" title="Cerrar">✕</button>
+    <h2><span aria-hidden="true">🔍</span> Búsqueda Avanzada de Historial</h2>
+    <button id="gs-close" onclick="gsTogglePanel()" aria-label="Cerrar panel">✕</button>
   </div>
 
   <div id="gs-form">
     <!-- Texto + botones -->
     <div class="gs-row">
+      <label for="gs-text" class="sr-only">Texto de búsqueda</label>
       <input id="gs-text" class="gs-input" type="text"
              placeholder="Texto, patrón, palabra clave…"
              onkeyup="if(event.key==='Enter') gsRunSearch()">
       <button class="gs-btn-search" onclick="gsRunSearch()">Buscar</button>
-      <button class="gs-btn-clear" onclick="gsClearResults()" title="Limpiar">✕</button>
+      <button class="gs-btn-clear" onclick="gsClearResults()" aria-label="Limpiar">✕</button>
     </div>
 
     <!-- Modos -->
     <div class="gs-row">
-      <div class="gs-modes" id="gs-modes">
-        <button class="gs-mode-btn active" data-mode="grep" onclick="gsSetMode(this)">💬 Mensaje</button>
-        <button class="gs-mode-btn"        data-mode="s"    onclick="gsSetMode(this)">🎯 Exacto (-S)</button>
-        <button class="gs-mode-btn"        data-mode="g"    onclick="gsSetMode(this)">🔎 Regex (-G)</button>
+      <div class="gs-modes" id="gs-modes" role="group" aria-label="Modo de búsqueda">
+        <button class="gs-mode-btn active" data-mode="grep" onclick="gsSetMode(this)" aria-label="Buscar por mensaje"><span aria-hidden="true">💬</span> Mensaje</button>
+        <button class="gs-mode-btn"        data-mode="s"    onclick="gsSetMode(this)" aria-label="Búsqueda exacta"><span aria-hidden="true">🎯</span> Exacto (-S)</button>
+        <button class="gs-mode-btn"        data-mode="g"    onclick="gsSetMode(this)" aria-label="Búsqueda por regex"><span aria-hidden="true">🔎</span> Regex (-G)</button>
       </div>
     </div>
 
     <!-- Filtros adicionales -->
     <div class="gs-row">
-      <input id="gs-autor"  class="gs-input" type="text"  placeholder="Autor (opcional)">
-      <input id="gs-desde"  class="gs-input" type="date"  title="Desde (fecha)">
-      <input id="gs-hasta"  class="gs-input" type="date"  title="Hasta (fecha)">
+      <label for="gs-autor" class="sr-only">Autor</label>
+      <input id="gs-autor"  class="gs-input" type="text"  placeholder="Autor…" aria-label="Filtrar por autor">
+      <label for="gs-desde" class="sr-only">Desde</label>
+      <input id="gs-desde"  class="gs-input" type="date"  aria-label="Fecha desde">
+      <label for="gs-hasta" class="sr-only">Hasta</label>
+      <input id="gs-hasta"  class="gs-input" type="date"  aria-label="Fecha hasta">
     </div>
   </div>
 
@@ -567,7 +588,7 @@ function gsRenderResults(resultados, texto, modo) {{
     const staggerDelay = Math.min(idx * 0.04, 0.5);
     const padreLinks = (c.parents || []).map((ph, i) => {{
       const pFull = (c.parent_full || [])[i] || ph;
-      return `<span class="gs-parent-link" onclick="gsNavParent('${{gsEscape(pFull || ph)}}')">↑ ${{gsEscape(ph)}}</span>`;
+      return `<span class="gs-parent-link" onclick="gsNavParent('${{gsEscape(pFull || ph)}}')"><span aria-hidden="true">↑</span> ${{gsEscape(ph)}}</span>`;
     }}).join(' ');
 
     // Determinar el nodo del grafo al que pertenece
@@ -577,7 +598,7 @@ function gsRenderResults(resultados, texto, modo) {{
       : '';
 
     const archivosStr = (c.archivos || []).length > 0
-      ? `<div class="gs-result-files">📄 ${{gsEscape((c.archivos || []).slice(0,3).join(', ') + ((c.archivos||[]).length>3?' ...':''))}}</div>`
+      ? `<div class="gs-result-files"><span aria-hidden="true">📄</span> ${{gsEscape((c.archivos || []).slice(0,3).join(', ') + ((c.archivos||[]).length>3?' ...':''))}}</div>`
       : '';
 
     return `
@@ -589,7 +610,7 @@ function gsRenderResults(resultados, texto, modo) {{
           ${{nodoLink}}
         </div>
         <div class="gs-result-msg">${{gsEscape(c.mensaje || '')}}</div>
-        <div class="gs-result-meta">👤 ${{gsEscape(c.autor)}} · 📅 ${{gsEscape(c.fecha)}}</div>
+        <div class="gs-result-meta"><span aria-hidden="true">👤</span> ${{gsEscape(c.autor)}} · <span aria-hidden="true">📅</span> ${{gsEscape(c.fecha)}}</div>
         ${{archivosStr}}
         ${{padreLinks ? `<div class="gs-parent-row"><span class="gs-parent-label">padre:</span>${{padreLinks}}</div>` : ''}}
       </div>`;

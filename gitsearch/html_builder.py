@@ -35,9 +35,31 @@ def generar_panel_busqueda(commits_data: list[dict[str, Any]]) -> str:
      ══════════════════════════════════════════════════════════ -->
 
 <style>
-  /*
-   * ── GitSearch Panel UI — Themed
+   /*
+   * ── GitSearch Panel UI — Themed & Polished
+   * Following: concentric radius, scale on press, responsive, tabular-nums
    */
+
+  .sr-only {{
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }}
+
+  :root {{
+    --gs-radius-sm:  4px;
+    --gs-radius-md:  8px;
+    --gs-radius-lg:  12px;
+    --gs-radius-pill: 20px;
+    --gs-transition: 0.15s cubic-bezier(0.2, 0, 0, 1);
+    --gs-transition-panel: 0.32s cubic-bezier(0.4, 0, 0.2, 1);
+  }}
 
   #gs-toggle-btn {{
     position: absolute;
@@ -47,7 +69,7 @@ def generar_panel_busqueda(commits_data: list[dict[str, Any]]) -> str:
     background: var(--bg-raised);
     border: 1px solid var(--border-normal);
     color: var(--text-primary);
-    border-radius: 8px;
+    border-radius: var(--gs-radius-md);
     padding: 7px 14px;
     font-size: 0.78rem;
     font-weight: 600;
@@ -57,24 +79,33 @@ def generar_panel_busqueda(commits_data: list[dict[str, Any]]) -> str:
     gap: 6px;
     backdrop-filter: blur(16px);
     font-family: 'Inter', sans-serif;
-    transition: background 0.15s, border-color 0.15s, color 0.15s, top 0.32s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: background var(--gs-transition),
+                border-color var(--gs-transition),
+                color var(--gs-transition),
+                transform var(--gs-transition);
     letter-spacing: 0.01em;
-  }}
-  /* When side panel is open, move button down to avoid X */
-  body:has(.side-panel.open) #gs-toggle-btn {{
-    top: 200px;
+    -webkit-font-smoothing: antialiased;
+    min-height: 40px;
+    min-width: 40px;
+    justify-content: center;
   }}
   #gs-toggle-btn:hover {{
     background: var(--bg-hover);
     border-color: var(--border-strong);
     color: var(--accent-active);
   }}
+  #gs-toggle-btn:active {{
+    transform: scale(0.96);
+  }}
+  body:has(.side-panel.open) #gs-toggle-btn {{
+    top: 200px;
+  }}
 
   #gs-panel {{
     position: absolute;
     top: 48px;
     right: 0;
-    width: 480px;
+    width: min(480px, 100vw);
     height: calc(100% - 48px);
     background: var(--panel-bg);
     backdrop-filter: blur(28px);
@@ -84,10 +115,29 @@ def generar_panel_busqueda(commits_data: list[dict[str, Any]]) -> str:
     display: flex;
     flex-direction: column;
     transform: translateX(100%);
-    transition: transform 0.32s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: transform var(--gs-transition-panel);
     font-family: 'Inter', sans-serif;
+    -webkit-font-smoothing: antialiased;
   }}
   #gs-panel.gs-open {{ transform: translateX(0); }}
+
+  /* Responsive: full-width panel on small screens */
+  @media (max-width: 520px) {{
+    #gs-panel {{
+      width: 100vw;
+      border-left: none;
+    }}
+    #gs-form .gs-row:first-child {{
+      flex-wrap: wrap;
+    }}
+    #gs-form .gs-row:first-child .gs-input {{
+      flex-basis: 100%;
+    }}
+    .gs-modes {{
+      width: 100%;
+      justify-content: flex-start;
+    }}
+  }}
 
   #gs-header {{
     padding: 16px 22px 14px;
@@ -107,6 +157,7 @@ def generar_panel_busqueda(commits_data: list[dict[str, Any]]) -> str:
     gap: 8px;
     text-transform: uppercase;
     letter-spacing: 0.06em;
+    text-wrap: balance;
   }}
   #gs-close {{
     background: none;
@@ -115,11 +166,18 @@ def generar_panel_busqueda(commits_data: list[dict[str, Any]]) -> str:
     font-size: 18px;
     cursor: pointer;
     line-height: 1;
-    padding: 3px 6px;
-    border-radius: 4px;
-    transition: color 0.15s, background 0.15s;
+    padding: 8px;
+    border-radius: var(--gs-radius-sm);
+    transition: color var(--gs-transition), background var(--gs-transition);
+    min-width: 40px;
+    min-height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: -8px -8px -8px 0;
   }}
   #gs-close:hover {{ color: var(--text-primary); background: var(--bg-raised); }}
+  #gs-close:active {{ transform: scale(0.96); }}
 
   #gs-form {{
     padding: 14px 22px;
@@ -135,11 +193,12 @@ def generar_panel_busqueda(commits_data: list[dict[str, Any]]) -> str:
     border: 1px solid var(--border-normal);
     color: var(--text-primary);
     padding: 8px 12px;
-    border-radius: 5px;
+    border-radius: var(--gs-radius-sm);
     font-size: 0.80rem;
     outline: none;
     font-family: 'Inter', sans-serif;
-    transition: border-color 0.15s;
+    transition: border-color var(--gs-transition);
+    -webkit-font-smoothing: antialiased;
   }}
   .gs-input:focus {{ border-color: var(--border-strong); }}
   .gs-input::placeholder {{ color: var(--text-muted); }}
@@ -149,16 +208,22 @@ def generar_panel_busqueda(commits_data: list[dict[str, Any]]) -> str:
     border: 1px solid var(--border-normal);
     color: var(--text-primary);
     padding: 8px 16px;
-    border-radius: 5px;
+    border-radius: var(--gs-radius-sm);
     font-size: 0.78rem;
     font-weight: 600;
     cursor: pointer;
     white-space: nowrap;
-    transition: background 0.15s, border-color 0.15s;
+    transition: background var(--gs-transition),
+                border-color var(--gs-transition),
+                transform var(--gs-transition);
+    min-height: 40px;
   }}
   .gs-btn-search:hover {{
     background: var(--bg-hover);
     border-color: var(--border-strong);
+  }}
+  .gs-btn-search:active {{
+    transform: scale(0.96);
   }}
 
   .gs-btn-clear {{
@@ -166,30 +231,46 @@ def generar_panel_busqueda(commits_data: list[dict[str, Any]]) -> str:
     border: 1px solid var(--border-subtle);
     color: var(--text-muted);
     padding: 8px 10px;
-    border-radius: 5px;
+    border-radius: var(--gs-radius-sm);
     font-size: 0.80rem;
     cursor: pointer;
-    transition: color 0.15s, border-color 0.15s;
+    transition: color var(--gs-transition),
+                border-color var(--gs-transition),
+                transform var(--gs-transition);
+    min-height: 40px;
+    min-width: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }}
   .gs-btn-clear:hover {{ color: var(--text-primary); border-color: var(--border-normal); }}
+  .gs-btn-clear:active {{ transform: scale(0.96); }}
 
   .gs-modes {{ display: flex; gap: 4px; flex-wrap: wrap; }}
   .gs-mode-btn {{
     background: transparent;
     border: 1px solid var(--border-subtle);
     color: var(--text-muted);
-    padding: 4px 10px;
-    border-radius: 20px;
+    padding: 6px 12px;
+    border-radius: var(--gs-radius-pill);
     font-size: 0.70rem;
     font-weight: 600;
     cursor: pointer;
-    transition: background 0.15s, border-color 0.15s, color 0.15s;
+    transition: background var(--gs-transition),
+                border-color var(--gs-transition),
+                color var(--gs-transition),
+                transform var(--gs-transition);
+    min-height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }}
   .gs-mode-btn.active, .gs-mode-btn:hover {{
     background: var(--bg-raised);
     border-color: var(--border-strong);
     color: var(--text-primary);
   }}
+  .gs-mode-btn:active {{ transform: scale(0.96); }}
 
   #gs-results-wrap {{
     flex: 1;
@@ -209,15 +290,18 @@ def generar_panel_busqueda(commits_data: list[dict[str, Any]]) -> str:
     min-height: 16px;
     text-transform: uppercase;
     letter-spacing: 0.04em;
+    font-variant-numeric: tabular-nums;
   }}
 
   .gs-result-item {{
     padding: 11px 13px;
-    border-radius: 6px;
+    border-radius: var(--gs-radius-md);
     border: 1px solid var(--border-subtle);
     margin-bottom: 6px;
     cursor: pointer;
-    transition: border-color 0.15s, background 0.15s;
+    transition: border-color var(--gs-transition),
+                background var(--gs-transition),
+                transform var(--gs-transition);
     background: transparent;
   }}
   .gs-result-item:hover {{
@@ -245,12 +329,15 @@ def generar_panel_busqueda(commits_data: list[dict[str, Any]]) -> str:
     border: 1px solid var(--border-normal);
     color: var(--text-secondary);
     font-size: 0.60rem;
-    padding: 1px 6px;
-    border-radius: 3px;
+    padding: 3px 8px;
+    border-radius: var(--gs-radius-sm);
     font-family: 'Inter', sans-serif;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.04em;
+    min-height: 40px;
+    display: inline-flex;
+    align-items: center;
   }}
 
   .gs-result-msg {{
@@ -261,6 +348,7 @@ def generar_panel_busqueda(commits_data: list[dict[str, Any]]) -> str:
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    text-wrap: pretty;
   }}
 
   .gs-result-meta, .gs-result-files {{
@@ -292,15 +380,23 @@ def generar_panel_busqueda(commits_data: list[dict[str, Any]]) -> str:
     color: var(--text-secondary);
     background: var(--bg-surface);
     border: 1px solid var(--border-subtle);
-    border-radius: 3px;
-    padding: 1px 7px;
+    border-radius: var(--gs-radius-sm);
+    padding: 6px 10px;
     cursor: pointer;
     text-decoration: none;
-    transition: color 0.15s, border-color 0.15s;
+    transition: color var(--gs-transition),
+                border-color var(--gs-transition),
+                transform var(--gs-transition);
+    min-height: 40px;
+    display: inline-flex;
+    align-items: center;
   }}
   .gs-parent-link:hover, .gs-node-link:hover {{
     color: var(--text-primary);
     border-color: var(--border-normal);
+  }}
+  .gs-parent-link:active, .gs-node-link:active {{
+    transform: scale(0.96);
   }}
   .gs-node-link {{
     margin-left: auto;
@@ -314,44 +410,65 @@ def generar_panel_busqueda(commits_data: list[dict[str, Any]]) -> str:
     text-align: center;
     padding: 32px 0;
   }}
+
+  @keyframes gs-fade-in {{
+    from {{ opacity: 0; transform: translateY(6px); }}
+    to   {{ opacity: 1; transform: translateY(0); }}
+  }}
+  @keyframes gs-fade-out {{
+    from {{ opacity: 1; transform: translateY(0); }}
+    to   {{ opacity: 0; transform: translateY(4px); }}
+  }}
+  .gs-result-item {{
+    animation: gs-fade-in 0.2s cubic-bezier(0.2, 0, 0, 1) both;
+  }}
+  @media (prefers-reduced-motion: reduce) {{
+    .gs-result-item {{
+      animation: none;
+    }}
+  }}
 </style>
 
 <!-- Botón flotante para abrir GitSearch -->
-<button id="gs-toggle-btn" onclick="gsTogglePanel()" title="Búsqueda avanzada en historial">
-  🔍 <span>GitSearch</span>
+<button id="gs-toggle-btn" onclick="gsTogglePanel()" aria-label="Abrir panel de búsqueda avanzada">
+  <span aria-hidden="true">🔍</span> <span>GitSearch</span>
 </button>
 
 <!-- Panel de búsqueda avanzada -->
-<div id="gs-panel">
+<div id="gs-panel" role="dialog" aria-label="Panel de búsqueda avanzada">
   <div id="gs-header">
-    <h2>🔍 Búsqueda Avanzada de Historial</h2>
-    <button id="gs-close" onclick="gsTogglePanel()" title="Cerrar">✕</button>
+    <h2><span aria-hidden="true">🔍</span> Búsqueda Avanzada de Historial</h2>
+    <button id="gs-close" onclick="gsTogglePanel()" aria-label="Cerrar panel">✕</button>
   </div>
 
   <div id="gs-form">
     <!-- Texto + botones -->
     <div class="gs-row">
+      <label for="gs-text" class="sr-only">Texto de búsqueda</label>
       <input id="gs-text" class="gs-input" type="text"
              placeholder="Texto, patrón, palabra clave…"
              onkeyup="if(event.key==='Enter') gsRunSearch()">
       <button class="gs-btn-search" onclick="gsRunSearch()">Buscar</button>
-      <button class="gs-btn-clear" onclick="gsClearResults()" title="Limpiar">✕</button>
+      <button class="gs-btn-clear" onclick="gsClearResults()" aria-label="Limpiar">✕</button>
     </div>
 
     <!-- Modos -->
     <div class="gs-row">
-      <div class="gs-modes" id="gs-modes">
-        <button class="gs-mode-btn active" data-mode="grep" onclick="gsSetMode(this)">💬 Mensaje</button>
-        <button class="gs-mode-btn"        data-mode="s"    onclick="gsSetMode(this)">🎯 Exacto (-S)</button>
-        <button class="gs-mode-btn"        data-mode="g"    onclick="gsSetMode(this)">🔎 Regex (-G)</button>
+      <div class="gs-modes" id="gs-modes" role="group" aria-label="Modo de búsqueda">
+        <button class="gs-mode-btn active" data-mode="grep" onclick="gsSetMode(this)" aria-label="Buscar por mensaje"><span aria-hidden="true">💬</span> Mensaje</button>
+        <button class="gs-mode-btn"        data-mode="s"    onclick="gsSetMode(this)" aria-label="Búsqueda exacta"><span aria-hidden="true">🎯</span> Exacto (-S)</button>
+        <button class="gs-mode-btn"        data-mode="g"    onclick="gsSetMode(this)" aria-label="Búsqueda por regex"><span aria-hidden="true">🔎</span> Regex (-G)</button>
       </div>
     </div>
 
     <!-- Filtros adicionales -->
     <div class="gs-row">
-      <input id="gs-autor"  class="gs-input" type="text"  placeholder="Autor (opcional)">
-      <input id="gs-desde"  class="gs-input" type="date"  title="Desde (fecha)">
-      <input id="gs-hasta"  class="gs-input" type="date"  title="Hasta (fecha)">
+      <label for="gs-autor" class="sr-only">Autor</label>
+      <input id="gs-autor"  class="gs-input" type="text"  placeholder="Autor…" aria-label="Filtrar por autor">
+      <label for="gs-desde" class="sr-only">Desde</label>
+      <input id="gs-desde"  class="gs-input" type="date"  aria-label="Fecha desde">
+      <label for="gs-hasta" class="sr-only">Hasta</label>
+      <input id="gs-hasta"  class="gs-input" type="date"  aria-label="Fecha hasta">
     </div>
   </div>
 
@@ -468,9 +585,10 @@ function gsRenderResults(resultados, texto, modo) {{
   gsResaltarNodosDeResultados(resultados);
 
   list.innerHTML = resultados.slice(0, 300).map((c, idx) => {{
+    const staggerDelay = Math.min(idx * 0.04, 0.5);
     const padreLinks = (c.parents || []).map((ph, i) => {{
       const pFull = (c.parent_full || [])[i] || ph;
-      return `<span class="gs-parent-link" onclick="gsNavParent('${{gsEscape(pFull || ph)}}')">↑ ${{gsEscape(ph)}}</span>`;
+      return `<span class="gs-parent-link" onclick="gsNavParent('${{gsEscape(pFull || ph)}}')"><span aria-hidden="true">↑</span> ${{gsEscape(ph)}}</span>`;
     }}).join(' ');
 
     // Determinar el nodo del grafo al que pertenece
@@ -480,11 +598,11 @@ function gsRenderResults(resultados, texto, modo) {{
       : '';
 
     const archivosStr = (c.archivos || []).length > 0
-      ? `<div class="gs-result-files">📄 ${{gsEscape((c.archivos || []).slice(0,3).join(', ') + ((c.archivos||[]).length>3?' ...':''))}}</div>`
+      ? `<div class="gs-result-files"><span aria-hidden="true">📄</span> ${{gsEscape((c.archivos || []).slice(0,3).join(', ') + ((c.archivos||[]).length>3?' ...':''))}}</div>`
       : '';
 
     return `
-      <div class="gs-result-item" id="gs-item-${{idx}}" onclick="gsSelectResult(this, '${{gsEscape(c.full_hash || c.hash)}}', '${{gsEscape(tagSha || '')}}')">
+      <div class="gs-result-item" id="gs-item-${{idx}}" style="animation-delay:${{staggerDelay}}s" onclick="gsSelectResult(this, '${{gsEscape(c.full_hash || c.hash)}}', '${{gsEscape(tagSha || '')}}')">
         <div class="gs-result-hash" style="display:flex; align-items:center; gap:6px;">
           <span style="cursor:pointer; text-decoration:underline;" title="Abrir detalle" onclick="if(typeof showCommitModal !== 'undefined') {{ event.stopPropagation(); showCommitModal('${{gsEscape(c.full_hash || c.hash)}}'); }}">${{gsEscape(c.hash)}}</span>
           ${{typeof getCopyBtnHtml !== 'undefined' ? getCopyBtnHtml(c.full_hash || c.hash) : ''}}
@@ -492,7 +610,7 @@ function gsRenderResults(resultados, texto, modo) {{
           ${{nodoLink}}
         </div>
         <div class="gs-result-msg">${{gsEscape(c.mensaje || '')}}</div>
-        <div class="gs-result-meta">👤 ${{gsEscape(c.autor)}} · 📅 ${{gsEscape(c.fecha)}}</div>
+        <div class="gs-result-meta"><span aria-hidden="true">👤</span> ${{gsEscape(c.autor)}} · <span aria-hidden="true">📅</span> ${{gsEscape(c.fecha)}}</div>
         ${{archivosStr}}
         ${{padreLinks ? `<div class="gs-parent-row"><span class="gs-parent-label">padre:</span>${{padreLinks}}</div>` : ''}}
       </div>`;

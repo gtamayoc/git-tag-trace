@@ -10,6 +10,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import suppress
@@ -69,7 +70,7 @@ def _fetch_diff_batch(shas: list[str], repo_path: str) -> dict[str, str]:
     diff_map: dict[str, str] = {}
     try:
         repo_local = Repo(repo_path)
-        batch_size = 50
+        batch_size = 150
         max_diffs = min(len(shas), MAX_DIFF_CACHE_SIZE)
         for i in range(0, max_diffs, batch_size):
             batch = shas[i : i + batch_size]
@@ -99,7 +100,7 @@ def _fetch_diff_batch(shas: list[str], repo_path: str) -> dict[str, str]:
     return diff_map
 
 
-def obtener_historial(repo: Repo, max_commits: int = 3000) -> dict[str, Any]:
+def obtener_historial(repo: Repo, max_commits: int = 1500) -> dict[str, Any]:
     STASH_PREFIXES = (
         "On ",
         "index on ",
@@ -185,7 +186,7 @@ def obtener_historial(repo: Repo, max_commits: int = 3000) -> dict[str, Any]:
         parents_hashes = [p.hexsha for p in c.parents]
 
         diff_preview = diff_cache.get(commit_hexsha[:7], "")
-        if not diff_preview and len(lista) < 500:
+        if not diff_preview and len(lista) < 50:
             try:
                 diff_preview = repo.git.show(
                     commit_hexsha, "-p", "--stat", "--no-color", "--format=", max_count=1
@@ -332,7 +333,7 @@ def comparar_tags(repo: Repo, tags: list[dict[str, Any]]) -> dict[str, Any] | No
 # ── 3a. Construcción del mapa completo de commits (DAG) ──────────────────────
 
 
-MAX_COMMITS_MAP = 5000
+MAX_COMMITS_MAP = 3000
 
 
 def construir_mapa_commits(repo: Repo) -> dict[str, Any]:
@@ -3079,16 +3080,33 @@ def main() -> None:
         print(f"[INFO] {info_cambios}")
         print("[INFO] Analizando repositorio y generando artefactos...")
 
+        t_inicio = time.perf_counter()
+
+        t0 = time.perf_counter()
         historial = obtener_historial(repo)
+        print(f"[TIMER] obtener_historial: {time.perf_counter() - t0:.2f}s")
+
+        t0 = time.perf_counter()
         tags = obtener_tags(repo)
+        print(f"[TIMER] obtener_tags: {time.perf_counter() - t0:.2f}s")
+
+        t0 = time.perf_counter()
         comparacion = comparar_tags(repo, tags)
+        print(f"[TIMER] comparar_tags: {time.perf_counter() - t0:.2f}s")
+
+        t0 = time.perf_counter()
         topologia = analizar_topologia_tags(repo, tags)
+        print(f"[TIMER] analizar_topologia_tags: {time.perf_counter() - t0:.2f}s")
 
         busqueda = None
         if args.search:
+            t0 = time.perf_counter()
             busqueda = ejecutar_busqueda(repo, args.search, topologia)
+            print(f"[TIMER] ejecutar_busqueda: {time.perf_counter() - t0:.2f}s")
 
+        t0 = time.perf_counter()
         reporte = generar_reporte(str(repo_path), historial, tags, comparacion, busqueda)
+        print(f"[TIMER] generar_reporte: {time.perf_counter() - t0:.2f}s")
 
         print("[INFO] Generando grafo de tags y explorador de historial...")
 
@@ -3116,9 +3134,11 @@ def main() -> None:
         else:
             panel_busqueda = ""
 
+        t0 = time.perf_counter()
         grafo_html, nodes, edges = generar_grafo_html(
             repo, tags, topologia, historial, busqueda, panel_busqueda
         )
+        print(f"[TIMER] generar_grafo_html: {time.perf_counter() - t0:.2f}s")
 
         guardar_estado(results_dir, datos_estado, hash_estado, hash_tags, nodes, edges)
         print(f"[INFO] Estado guardado en: {ruta_data_json(results_dir).resolve()}")
@@ -3136,6 +3156,8 @@ def main() -> None:
         with grafo_path.open("w", encoding="utf-8", errors="replace") as f:
             f.write(grafo_html)
         print(f"[INFO] Grafo interactivo guardado en: {grafo_path.resolve()}")
+
+        print(f"[TIMER] TOTAL: {time.perf_counter() - t_inicio:.2f}s")
 
         print(reporte)
 

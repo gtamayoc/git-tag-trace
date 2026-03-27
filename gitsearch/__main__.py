@@ -11,7 +11,7 @@ import json
 import os
 import sys
 from collections import Counter
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
@@ -69,7 +69,7 @@ def _fetch_diff_batch(shas: list[str], repo_path: str) -> dict[str, str]:
     diff_map: dict[str, str] = {}
     try:
         repo_local = Repo(repo_path)
-        batch_size = 25
+        batch_size = 50
         max_diffs = min(len(shas), MAX_DIFF_CACHE_SIZE)
         for i in range(0, max_diffs, batch_size):
             batch = shas[i : i + batch_size]
@@ -144,11 +144,11 @@ def obtener_historial(repo: Repo, max_commits: int = 3000) -> dict[str, Any]:
     repo_path = str(repo.working_dir)
     diff_cache: dict[str, str] = {}
 
-    max_workers = min(4, (os.cpu_count() or 2))
-    batch_size = 50
+    max_workers = min(8, (os.cpu_count() or 4))
+    batch_size = 100
     diff_futures = []
 
-    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
         for i in range(0, len(shas_all), batch_size):
             batch = shas_all[i : i + batch_size]
             future = executor.submit(_fetch_diff_batch, batch, repo_path)
@@ -185,6 +185,15 @@ def obtener_historial(repo: Repo, max_commits: int = 3000) -> dict[str, Any]:
         parents_hashes = [p.hexsha for p in c.parents]
 
         diff_preview = diff_cache.get(commit_hexsha[:7], "")
+        if not diff_preview and len(lista) < 500:
+            try:
+                diff_preview = repo.git.show(
+                    commit_hexsha, "-p", "--stat", "--no-color", "--format=", max_count=1
+                )
+                if len(diff_preview) > 4000:
+                    diff_preview = diff_preview[:4000] + "\n\n... (diff truncado por tamaño) ..."
+            except Exception:
+                diff_preview = "(Error cargando diff)"
 
         lista.append(
             {
@@ -754,9 +763,9 @@ def analizar_topologia_tags(repo: Repo, tags: list[dict[str, Any]]) -> dict[str,
     if stats_tasks:
         print(f"[INFO] Calculando stats en paralelo para {len(stats_tasks)} tags...")
         repo_path = str(repo.working_dir)
-        max_workers = min(4, (os.cpu_count() or 2))
+        max_workers = min(8, (os.cpu_count() or 4))
 
-        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = []
             for i in range(0, len(stats_tasks), 20):
                 batch = stats_tasks[i : i + 20]

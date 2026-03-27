@@ -11,7 +11,7 @@ import json
 import os
 import sys
 from collections import Counter
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
@@ -59,6 +59,9 @@ except ImportError:
 # ──────────────────────────────────────────────
 
 
+MAX_DIFF_CACHE_SIZE = 1000
+
+
 def _fetch_diff_batch(shas: list[str], repo_path: str) -> dict[str, str]:
     """Fetch diffs for multiple commits in a single git command using git log -p."""
     from git import Repo
@@ -66,8 +69,9 @@ def _fetch_diff_batch(shas: list[str], repo_path: str) -> dict[str, str]:
     diff_map: dict[str, str] = {}
     try:
         repo_local = Repo(repo_path)
-        batch_size = 50
-        for i in range(0, len(shas), batch_size):
+        batch_size = 25
+        max_diffs = min(len(shas), MAX_DIFF_CACHE_SIZE)
+        for i in range(0, max_diffs, batch_size):
             batch = shas[i : i + batch_size]
             try:
                 raw = repo_local.git.log(
@@ -82,11 +86,12 @@ def _fetch_diff_batch(shas: list[str], repo_path: str) -> dict[str, str]:
                     if len(sha) >= 7:
                         sha = sha[:7]
                     diff_content = "commit " + commit_block
-                    if len(diff_content) > 6000:
+                    if len(diff_content) > 4000:
                         diff_content = (
-                            diff_content[:6000] + "\n\n... (diff truncado por tamaño) ..."
+                            diff_content[:4000] + "\n\n... (diff truncado por tamaño) ..."
                         )
-                    diff_map[sha] = diff_content
+                    if len(diff_map) < MAX_DIFF_CACHE_SIZE:
+                        diff_map[sha] = diff_content
             except Exception:
                 pass
     except Exception:
@@ -94,7 +99,7 @@ def _fetch_diff_batch(shas: list[str], repo_path: str) -> dict[str, str]:
     return diff_map
 
 
-def obtener_historial(repo: Repo) -> dict[str, Any]:
+def obtener_historial(repo: Repo, max_commits: int = 3000) -> dict[str, Any]:
     STASH_PREFIXES = (
         "On ",
         "index on ",
@@ -111,13 +116,19 @@ def obtener_historial(repo: Repo) -> dict[str, Any]:
         seen: set[str] = set()
         commits = []
         for ref in refs:
-            for c in repo.iter_commits(ref):
+            for c in repo.iter_commits(ref, max_count=max_commits):
                 if c.hexsha not in seen and not es_stash(c):
                     seen.add(c.hexsha)
                     commits.append(c)
+                    if len(commits) >= max_commits:
+                        break
+            if len(commits) >= max_commits:
+                break
         commits.sort(key=lambda c: c.committed_date, reverse=True)
+        if len(commits) > max_commits:
+            commits = commits[:max_commits]
     except Exception:
-        commits = [c for c in repo.iter_commits() if not es_stash(c)]
+        commits = [c for c in repo.iter_commits(max_count=max_commits) if not es_stash(c)]
 
     if not commits:
         return {"commits": [], "total": 0, "autores": {}, "fecha_inicio": None, "fecha_fin": None}
@@ -133,11 +144,11 @@ def obtener_historial(repo: Repo) -> dict[str, Any]:
     repo_path = str(repo.working_dir)
     diff_cache: dict[str, str] = {}
 
-    max_workers = min(8, (os.cpu_count() or 4))
-    batch_size = 100
+    max_workers = min(4, (os.cpu_count() or 2))
+    batch_size = 50
     diff_futures = []
 
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
         for i in range(0, len(shas_all), batch_size):
             batch = shas_all[i : i + batch_size]
             future = executor.submit(_fetch_diff_batch, batch, repo_path)
@@ -162,7 +173,7 @@ def obtener_historial(repo: Repo) -> dict[str, Any]:
 
     lista: list[dict[str, Any]] = []
     for idx, c in enumerate(commits):
-        if idx % 500 == 0 and idx > 0:
+        if idx % 1000 == 0 and idx > 0:
             print(
                 f"[INFO] Progreso commits: {idx}/{total_commits} ({int(idx / total_commits * 100)}%)"
             )
@@ -174,15 +185,6 @@ def obtener_historial(repo: Repo) -> dict[str, Any]:
         parents_hashes = [p.hexsha for p in c.parents]
 
         diff_preview = diff_cache.get(commit_hexsha[:7], "")
-        if not diff_preview:
-            try:
-                diff_preview = repo.git.show(
-                    commit_hexsha, "-p", "--stat", "--no-color", "--format=", max_count=1
-                )
-                if len(diff_preview) > 6000:
-                    diff_preview = diff_preview[:6000] + "\n\n... (diff truncado por tamaño) ..."
-            except Exception:
-                diff_preview = "(Error cargando diff)"
 
         lista.append(
             {
@@ -280,7 +282,7 @@ def comparar_tags(repo: Repo, tags: list[dict[str, Any]]) -> dict[str, Any] | No
         base = bases[0] if bases else c_anterior
 
         # Commits exclusivos de tag_actual respecto al punto de divergencia
-        commits_entre = list(repo.iter_commits(f"{base.hexsha}..{c_actual.hexsha}", max_count=5000))
+        commits_entre = list(repo.iter_commits(f"{base.hexsha}..{c_actual.hexsha}", max_count=2000))
         autores = list({c.author.name for c in commits_entre})
 
         archivos_modificados = set()
@@ -321,39 +323,50 @@ def comparar_tags(repo: Repo, tags: list[dict[str, Any]]) -> dict[str, Any] | No
 # ── 3a. Construcción del mapa completo de commits (DAG) ──────────────────────
 
 
+MAX_COMMITS_MAP = 5000
+
+
 def construir_mapa_commits(repo: Repo) -> dict[str, Any]:
     """
-    Recorre ALL refs (branches locales, remotas, tags) y construye un dict
-    {hexsha_completo: commit_obj} con todos los commits accesibles del repo.
+    Recorre refs (branches locales, remotas, tags) y construye un dict
+    {hexsha_completo: commit_obj} con commits accesibles del repo.
     Excluye refs de stash para no contaminar el grafo.
+    Usa límite para evitar consumo excesivo de memoria.
     """
     STASH_PREFIXES = ("refs/stash", "stash@")
     seen: dict[str, Any] = {}
 
     def _walk(ref_commit: Any) -> None:
+        if len(seen) >= MAX_COMMITS_MAP:
+            return
         stack = [ref_commit]
-        while stack:
+        while stack and len(seen) < MAX_COMMITS_MAP:
             c = stack.pop()
             if c.hexsha in seen:
                 continue
             seen[c.hexsha] = c
             stack.extend(c.parents)
 
-    # Branches locales
     for head in repo.heads:
+        if len(seen) >= MAX_COMMITS_MAP:
+            break
         with suppress(Exception):
             _walk(head.commit)
 
-    # Branches remotas
     for remote in repo.remotes:
+        if len(seen) >= MAX_COMMITS_MAP:
+            break
         for ref in remote.refs:
+            if len(seen) >= MAX_COMMITS_MAP:
+                break
             if any(ref.name.startswith(p) for p in STASH_PREFIXES):
                 continue
             with suppress(Exception):
                 _walk(ref.commit)
 
-    # Tags (por si algún commit de tag no está en ninguna rama)
     for tag in repo.tags:
+        if len(seen) >= MAX_COMMITS_MAP:
+            break
         with suppress(Exception):
             _walk(tag.commit)
 
@@ -446,7 +459,7 @@ def calcular_commits_exclusivos_tag(
         bases = repo.merge_base(commit_padre_tag, commit_tag)
         base = bases[0] if bases else commit_padre_tag
 
-        commits = list(repo.iter_commits(f"{base.hexsha}..{commit_tag.hexsha}", max_count=5000))
+        commits = list(repo.iter_commits(f"{base.hexsha}..{commit_tag.hexsha}", max_count=2000))
 
         commits_data = []
         autores_set = set()
@@ -529,7 +542,7 @@ def calcular_commits_exclusivos_batch(
             base = bases[0] if bases else commit_padre_tag
 
             commits = list(
-                repo_local.iter_commits(f"{base.hexsha}..{commit_tag.hexsha}", max_count=5000)
+                repo_local.iter_commits(f"{base.hexsha}..{commit_tag.hexsha}", max_count=2000)
             )
 
             commits_data = []
@@ -741,9 +754,9 @@ def analizar_topologia_tags(repo: Repo, tags: list[dict[str, Any]]) -> dict[str,
     if stats_tasks:
         print(f"[INFO] Calculando stats en paralelo para {len(stats_tasks)} tags...")
         repo_path = str(repo.working_dir)
-        max_workers = min(8, (os.cpu_count() or 4))
+        max_workers = min(4, (os.cpu_count() or 2))
 
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
             futures = []
             for i in range(0, len(stats_tasks), 20):
                 batch = stats_tasks[i : i + 20]

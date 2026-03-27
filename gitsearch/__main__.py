@@ -1731,6 +1731,10 @@ def generar_grafo_html(
             }
 
             function toggleTheme() {
+                const now = Date.now();
+                if (toggleTheme._lastToggle && (now - toggleTheme._lastToggle) < 150) return;
+                toggleTheme._lastToggle = now;
+                
                 currentTheme = currentTheme === 'dark' ? 'light' : 'dark';
                 localStorage.setItem('gs_theme', currentTheme);
                 if (currentTheme === 'light') {
@@ -1740,7 +1744,13 @@ def generar_grafo_html(
                     document.documentElement.classList.add('gs-theme-dark');
                     document.documentElement.classList.remove('gs-theme-light');
                 }
-                updateNetworkColors();
+                
+                requestAnimationFrame(() => {
+                    requestAnimationFrame(() => {
+                        updateNetworkColors();
+                    });
+                });
+                
                 showToast('Tema: ' + (currentTheme === 'dark' ? 'Oscuro' : 'Claro'));
             }
 
@@ -1909,43 +1919,31 @@ def generar_grafo_html(
 
         function updateNetworkColors() {
             const t = THEMES_CONFIG[currentTheme];
-            const viewState = {
-                position: network.getViewPosition(),
-                scale: network.getScale()
-            };
-            const positions = network.getPositions();
-            const allNodes = nodes.get();
+            const viewState = network.getViewPosition();
+            const scale = network.getScale();
             
-            network.setOptions({
-                layout: { hierarchical: { enabled: false } },
-                physics: { enabled: false }
-            });
+            const allNodes = nodes.get();
+            const nodeUpdates = [];
+            const edgeUpdates = [];
             
             allNodes.forEach(n => {
-                const pos = positions[n.id] || {x: n.x, y: n.y};
-                if(n.is_expanded_commit) {
-                    nodes.update({
-                        id: n.id, 
-                        x: pos.x, 
-                        y: pos.y,
-                        fixed: { x: true, y: true },
-                        color: { background: currentTheme === 'dark' ? '#2a2a2a' : '#dfdbd4', border: currentTheme === 'dark' ? '#555555' : '#b1b6bd' },
-                        font: { color: t.font }
-                    });
-                } else {
-                    nodes.update({
-                        id: n.id, 
-                        x: pos.x, 
-                        y: pos.y,
-                        fixed: { x: true, y: true },
-                        color: { background: n.is_main ? t.mainBg : t.sideBg, border: n.is_main ? t.mainBorder : t.sideBorder },
-                        font: { color: t.font }
-                    });
-                }
+                const isExpanded = n.is_expanded_commit;
+                nodeUpdates.push({
+                    id: n.id,
+                    color: { 
+                        background: isExpanded 
+                            ? (currentTheme === 'dark' ? '#2a2a2a' : '#dfdbd4') 
+                            : (n.is_main ? t.mainBg : t.sideBg), 
+                        border: isExpanded 
+                            ? (currentTheme === 'dark' ? '#555555' : '#b1b6bd')
+                            : (n.is_main ? t.mainBorder : t.sideBorder) 
+                    },
+                    font: { color: t.font }
+                });
             });
             
             edges.forEach(e => {
-                edges.update({
+                edgeUpdates.push({
                     id: e.id, 
                     color: { color: t.edge, highlight: t.edgeHi },
                     font: { 
@@ -1955,42 +1953,14 @@ def generar_grafo_html(
                 });
             });
             
-            network.storePositions();
-            
-            network.setOptions({
-                layout: { 
-                    hierarchical: { 
-                        enabled: true, 
-                        direction: 'UD', 
-                        sortMethod: 'directed', 
-                        levelSeparation: expandedTagId ? 180 : baseLevelSep, 
-                        nodeSpacing: expandedTagId ? 140 : baseNodeSpac,
-                        treeSpacing: expandedTagId ? 140 : baseNodeSpac,
-                        blockShifting: false,
-                        edgeMinimization: false
-                    } 
-                },
-                physics: { enabled: false }
-            });
-            
-            Object.entries(positions).forEach(([id, pos]) => {
-                if (network.body.nodes[id]) {
-                    network.body.nodes[id].x = pos.x;
-                    network.body.nodes[id].y = pos.y;
-                }
-            });
+            nodes.update(nodeUpdates);
+            edges.update(edgeUpdates);
             
             network.moveTo({
-                position: viewState.position,
-                scale: viewState.scale,
+                position: viewState,
+                scale: scale,
                 animation: false
             });
-            
-            setTimeout(() => {
-                allNodes.forEach(n => {
-                    nodes.update({ id: n.id, fixed: { x: false, y: false } });
-                });
-            }, 100);
             
             if (lastHighlightedNode) highlightNode(lastHighlightedNode);
         }

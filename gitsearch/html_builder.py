@@ -569,6 +569,8 @@ function gsRunSearch() {{
 }}
 
 // ── Renderizar resultados ─────────────────────────────
+const MAX_RESULTADOS_PANEL = 150;
+
 function gsRenderResults(resultados, texto, modo) {{
   const list = document.getElementById('gs-results-list');
 
@@ -579,14 +581,20 @@ function gsRenderResults(resultados, texto, modo) {{
     return;
   }}
 
-  gsSetStatus(`${{resultados.length}} commit${{resultados.length !== 1 ? 's' : ''}} encontrado${{resultados.length !== 1 ? 's' : ''}} · modo: ${{modo}}`);
+  const totalMsg = resultados.length > MAX_RESULTADOS_PANEL 
+    ? resultados.length + ' (mostrando ' + MAX_RESULTADOS_PANEL + ')' 
+    : String(resultados.length);
+  gsSetStatus(totalMsg + ' commit' + (resultados.length !== 1 ? 's' : '') + ' · modo: ' + modo);
 
-  // Resaltar todos los nodos del grafo que contengan algún resultado
-  gsResaltarNodosDeResultados(resultados);
+  // Limitar resultados para evitar DOM lento
+  const resultadosLimitados = resultados.slice(0, MAX_RESULTADOS_PANEL);
+  
+  // Resaltar nodos solo de resultados visibles
+  gsResaltarNodosDeResultados(resultadosLimitados);
 
-  list.innerHTML = resultados.slice(0, 300).map((c, idx) => {{
-    const staggerDelay = Math.min(idx * 0.04, 0.5);
-    const padreLinks = (c.parents || []).map((ph, i) => {{
+  list.innerHTML = resultadosLimitados.map((c, idx) => {{
+    const staggerDelay = Math.min(idx * 0.02, 0.3);
+    const padreLinks = (c.parents || []).slice(0, 3).map((ph, i) => {{
       const pFull = (c.parent_full || [])[i] || ph;
       return `<span class="gs-parent-link" onclick="gsNavParent('${{gsEscape(pFull || ph)}}')"><span aria-hidden="true">↑</span> ${{gsEscape(ph)}}</span>`;
     }}).join(' ');

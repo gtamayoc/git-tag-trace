@@ -1375,6 +1375,12 @@ def generar_grafo_html(
             color: var(--text-primary);
             border-color: var(--border-strong);
         }
+        .btn-round.edit-mode-on {
+            background: var(--bg-raised);
+            color: var(--text-primary);
+            border-color: var(--border-strong);
+            box-shadow: inset 0 0 0 2px var(--border-strong);
+        }
 
         /* ── Hash code ── */
         .hash-code {
@@ -1589,7 +1595,7 @@ def generar_grafo_html(
 
     <!-- Keyboard Shortcuts Hint -->
     <div id="shortcuts-hint">
-        <kbd>T</kbd> Tema &nbsp; <kbd>ESC</kbd> Cerrar &nbsp; <kbd>/</kbd> Buscar
+        <kbd>T</kbd> Tema &nbsp; <kbd>ESC</kbd> Cerrar &nbsp; <kbd>/</kbd> Buscar &nbsp; <kbd>E</kbd> Editar
     </div>
 
     <!-- Barra superior GitSearch -->
@@ -1656,6 +1662,7 @@ def generar_grafo_html(
         <button class="btn-round" onclick="zoomOut()" title="Alejar">-</button>
         <button class="btn-round" onclick="network.fit({animation:true})" title="Ajustar vista">⛶</button>
         <button class="btn-round" onclick="toggleTheme()" title="Cambiar Tema (T)">🌓</button>
+        <button class="btn-round" id="btn-edit-mode" onclick="toggleEditMode()" title="Modo Edición: OFF — nodos bloqueados">🔒</button>
     </div>
 
     <!-- Modal Commit Detail -->
@@ -1865,7 +1872,7 @@ def generar_grafo_html(
                     treeSpacing: baseNodeSpac
                 } 
             },
-            interaction: { hover: true, dragNodes: true, zoomView: true, dragView: true, selectConnectedEdges: false },
+            interaction: { hover: true, dragNodes: false, zoomView: true, dragView: true, selectConnectedEdges: false },
             physics: { 
                 enabled: false
             }
@@ -2026,6 +2033,58 @@ def generar_grafo_html(
                 savePositions();
             }
         });
+
+        // ── Modo Edición (lock / unlock nodos) ──────────────────────────────
+        let editMode = false;
+
+        function toggleEditMode() {
+            editMode = !editMode;
+            network.setOptions({ interaction: { dragNodes: editMode } });
+            const btn = document.getElementById('btn-edit-mode');
+            if (btn) {
+                btn.textContent = editMode ? '✏️' : '🔒';
+                btn.title = editMode
+                    ? 'Modo Edición: ON — clic para bloquear nodos'
+                    : 'Modo Edición: OFF — nodos bloqueados';
+                btn.classList.toggle('edit-mode-on', editMode);
+            }
+            showToast(editMode ? '✏️ Modo edición activado' : '🔒 Nodos bloqueados');
+        }
+
+        // Atajo de teclado 'E' para toggle de modo edición
+        document.addEventListener('keydown', function _editKey(e) {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+            if (e.key === 'e' || e.key === 'E') toggleEditMode();
+        });
+
+        // ── Anti-colisión: separar nodos que comparten posición ─────────────
+        (function resolverColisiones() {
+            const MIN_SEP = 60;  // distancia mínima entre centros en px
+            const allN = nodes.get();
+            const pos = network.getPositions(allN.map(n => n.id));
+            const updates = [];
+
+            for (let i = 0; i < allN.length; i++) {
+                let pi = pos[allN[i].id];
+                if (!pi) continue;
+                for (let j = i + 1; j < allN.length; j++) {
+                    let pj = pos[allN[j].id];
+                    if (!pj) continue;
+                    const dx = Math.abs(pi.x - pj.x);
+                    const dy = Math.abs(pi.y - pj.y);
+                    if (dx < MIN_SEP && dy < MIN_SEP) {
+                        // Desplazar el nodo j en Y hasta que haya espacio libre
+                        pj = { x: pj.x, y: pj.y + MIN_SEP };
+                        pos[allN[j].id] = pj;
+                        updates.push({ id: allN[j].id, x: pj.x, y: pj.y, fixed: false });
+                    }
+                }
+            }
+
+            if (updates.length > 0) {
+                nodes.update(updates);
+            }
+        })();
 
         // Exponer función para obtener posiciones actuales (útil para ajustes o guardado manual)
         window.getNodesPosition = () => {
